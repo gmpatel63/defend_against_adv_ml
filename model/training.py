@@ -5,6 +5,7 @@ import pandas as pd
 import tensorflow as tf
 from pathlib import Path
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
+from tensorflow.keras.models import load_model
 
 from .datasets import create_tf_dataset
 from .models import cnn_model, context_aware_model
@@ -17,7 +18,6 @@ def train_model(args, params, paths):
         paths['training_data'], args, params, training=True)
     validation_dataset = create_tf_dataset(
         paths['validation_data'], args, params)
-    test_dataset = create_tf_dataset(paths['test_data'], args, params)
 
     strategy = tf.distribute.MirroredStrategy()
     with strategy.scope():
@@ -52,9 +52,6 @@ def train_model(args, params, paths):
         end = time.time()-start
         logging.info(f'model training time: {end}')
 
-        # evaluate model
-        predictions = model.predict(x=test_dataset)
-
         save_model_dir = Path(model_dir, 'model')
         save_model_dir.mkdir(exist_ok=True)
         model.save(save_model_dir)
@@ -75,13 +72,34 @@ def train_model(args, params, paths):
 
     plot_history(hist.history, paths['plots_dir'])
 
+
+def evaluate_model(args, params, paths):
+    '''
+    make predictions on test dataset, save it in csv and calculate RMSE
+    '''
+    logging.info(f'--------------------------------------------------')
+    logging.info(f'evaluating {args.model} model')
+    test_dataset = create_tf_dataset(paths['test_data'], args, params)
+    
+    strategy = tf.distribute.MirroredStrategy()
+    with strategy.scope():
+        if args.model == 'cnn':
+            model_dir = paths['cnn_model']
+        elif args.model == 'context_aware':
+            model_dir = paths['context_aware_model']
+        
+        saved_model_dir = Path(model_dir, 'model')
+        model = load_model(saved_model_dir)
+        
+        # evaluate model
+        predictions = model.predict(x=test_dataset)
+
     test_df = pd.read_csv(paths['test_data'])
     test_df['predictions'] = predictions
     rmse = ((test_df.predictions - test_df.age) ** 2).mean() ** .5
-    logging.info(f'--------------------------------------------------')
+    
     print(f'RMSE of the {args.model} model: {rmse}')
-    logging.info(f'--------------------------------------------------')
-
     predictions_csv_path = Path(model_dir, f'{args.model}_evaluation.csv')
     test_df.to_csv(predictions_csv_path, index=False, columns=[
                    'dataset', 'site_name', 'subject_id', 'age', 'predictions'])
+    logging.info(f'--------------------------------------------------')

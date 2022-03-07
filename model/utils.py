@@ -12,25 +12,26 @@ from . import config
 def parse_args():
     parser = argparse.ArgumentParser()
     parser = argparse.ArgumentParser()
+
     parser.add_argument('--experiment_dir', default='experiments/base_model',
                         help='Experiment directory containing params.json')
-
-    # parser.add_argument(
-    #     '--data_dir', help='Directory containing all the dataset folders and dataframes')
-
-    # parser.add_argument(
-    #     '--restore_from', help='Optional, directory or file containing saved models')
 
     parser.add_argument('--work_dir', required=True, type=str,
                         help='main work dir containing \'model_input_data\' folder')
 
-    # parser.add_argument('--with_anat_feats', dest='with_anat_feats', action='store_true',
-    #                     help='use context aware model if true')
-
     parser.add_argument('--model', required=True, choices=['cnn', 'context_aware'],
                         help='cnn or context_aware')
 
+    parser.add_argument('--train', dest='train', action='store_true',
+                        help='train the model')
+
+    parser.add_argument('--evaluate', dest='evaluate', action='store_true',
+                        help='evaluate the model')
+
     parser.add_argument('--attack', help='gsm or l0')
+
+    # parser.add_argument(
+    #     '--restore_from', help='Optional, directory or file containing saved models')
 
     args = parser.parse_args()
     assert Path(args.work_dir).is_dir(), f'invalid path for work_dir'
@@ -87,7 +88,7 @@ def set_logger(args):
     """
     logs_dir = Path(args.experiment_dir, 'logs')
     logs_dir.mkdir(exist_ok=True)
-    
+
     now = datetime.now()
     dt_string = now.strftime('%Y_%m_%d_%H_%M')
     model_name = args.model
@@ -96,7 +97,7 @@ def set_logger(args):
         exec_string = 'attack' + args.attack
     log_file_name = f'{dt_string}_{model_name}_{exec_string}.log'
     log_path = Path(logs_dir, log_file_name)
-    
+
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
