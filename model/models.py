@@ -6,7 +6,7 @@ from tensorflow.keras.layers import Input, Dropout, Activation, Dense, BatchNorm
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.models import load_model
 
-def cnn_model():
+def cnn_model(params):
     cnn = Sequential()
     cnn.add(Conv3D(filters=8, kernel_size=[3, 3, 3], strides=[1, 1, 1],
                    padding="same", data_format="channels_last", dilation_rate=[1, 1, 1],
@@ -61,12 +61,12 @@ def cnn_model():
                   bias_initializer='zeros', name="dense_3"))
 
     cnn.compile(
-        Adam(lr=0.0001), loss='mean_squared_error')
+        Adam(lr=params.learning_rate), loss='mean_squared_error')
 
     return cnn
 
 
-def context_aware_model(cnn_dir):
+def context_aware_model(params, cnn_dir):
     cnn = load_model(cnn_dir)
 
     cnn_input = cnn.layers[0].input
@@ -102,5 +102,5 @@ def context_aware_model(cnn_dir):
 
     model2 = tf.keras.Model(inputs=[cnn_input, input_2], outputs=x)
     model2.compile(
-        Adam(lr=0.0001), loss='mean_squared_error')
+        Adam(lr=params.learning_rate), loss='mean_squared_error')
     return model2

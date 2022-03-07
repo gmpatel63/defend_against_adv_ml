@@ -27,7 +27,7 @@ def parse_args():
     # parser.add_argument('--with_anat_feats', dest='with_anat_feats', action='store_true',
     #                     help='use context aware model if true')
 
-    parser.add_argument('--model', required=True,
+    parser.add_argument('--model', required=True, choices=['cnn', 'context_aware'],
                         help='cnn or context_aware')
 
     parser.add_argument('--attack', help='gsm or l0')
