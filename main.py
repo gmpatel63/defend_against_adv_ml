@@ -4,6 +4,8 @@ from pathlib import Path
 from model.utils import Params, parse_args, get_paths, set_logger
 from model.datasets import create_and_plot_data_csvs
 from model.training import train_model, evaluate_model
+from model.attacks import gsm_attack, l0_attack
+from model.models import load_saved_model
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '2'
 
@@ -33,12 +35,11 @@ def main():
     if args.evaluate:
         evaluate_model(args, params, paths)
 
+    model = load_saved_model(args, paths)
     if args.attack == 'gsm':
-        # gsm attack
-        pass
+        gsm_attack(args, params, paths, model)
     elif args.attack == 'l0':
-        # l0 attack
-        pass
+        l0_attack(args, params, paths, model)
 
 
 if __name__ == '__main__':

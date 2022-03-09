@@ -34,7 +34,7 @@ def plot_history(history, output_dir):
 def findDeviation(df, col1, col2):
     return (df[col1] - df[col2]).abs().mean()
 
-def plot_deviation(args, df, attack_columns, output_dir):
+def plot_categorical_deviation(args, df, attack_columns, output_dir):
   
     df0_14 = df.query('age < 15')
     df15_25 = df.query('age >= 15 and age <= 25')
@@ -59,3 +59,7 @@ def plot_deviation(args, df, attack_columns, output_dir):
     deviation_plt.legend()
     plot_file_path = Path(output_dir, f'{args.attack}_deviation.png')
     plt.savefig(plot_file_path)
+    
+    
+def plot_overall_deviation(args, df, attack_columns, output_dir):
+    pass

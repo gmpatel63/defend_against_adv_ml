@@ -1,9 +1,10 @@
 """General utility functions"""
 
-from datetime import datetime
 import argparse
 import json
 import logging
+import pandas as pd
+from datetime import datetime
 from pathlib import Path
 
 from . import config
@@ -91,11 +92,10 @@ def set_logger(args):
 
     now = datetime.now()
     dt_string = now.strftime('%Y_%m_%d_%H_%M')
-    model_name = args.model
-    exec_string = 'training'
+    exec_string = 'train' if args.train else 'evaluate'
     if args.attack is not None:
         exec_string = 'attack' + args.attack
-    log_file_name = f'{dt_string}_{model_name}_{exec_string}.log'
+    log_file_name = f'{dt_string}_{exec_string}_{args.model}.log'
     log_path = Path(logs_dir, log_file_name)
 
     logger = logging.getLogger()
@@ -129,3 +129,23 @@ def get_paths(args):
         'context_aware_model': Path(args.experiment_dir, config.CONTEXT_AWARE_MODEL_DIR)
     }
     return paths
+
+
+# def change_work_dir_in_datasets(csv_dir_path, old_work_dir_path, new_work_dir_path):
+#     '''
+#     change path of 'mri_path' in dataset csvs
+#     
+#     Example:
+#     change '/path/to/work_dir/model_input_data/ABIDE_I/Leuven1_0050691.nii.gz'
+#     to '/new_path/new_work_dir/model_input_data/ABIDE_I/Leuven1_0050691.nii.gz'
+#     '''
+#     csv_dir = Path(csv_dir_path)
+#     assert csv_dir.exists(), f'invalid path: {csv_dir}'
+#     
+#     for path in csv_dir.iterdir():
+#         if path.suffix != '.csv' or path.is_dir():
+#             continue
+#         
+#         df = pd.read_csv(path)
+#         df['mri_path'] = df['mri_path'].str.replace(old_work_dir_path, new_work_dir_path)
+#         df.to_csv(path, index=False)
