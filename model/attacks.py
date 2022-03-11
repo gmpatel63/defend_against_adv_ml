@@ -1,4 +1,5 @@
 import logging
+from unittest import result
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -6,8 +7,9 @@ from pathlib import Path
 
 from . import config
 from .datasets import load_normalized_mri
-from .plots import plot_categorical_deviation, plot_overall_deviation
+from .plots import plot_categorical_deviation, plot_comparison
 
+COLUMN_NAMES = ['dataset', 'site_name', 'subject_id', 'age']
 
 def get_anatomical_features(subj_record):
     anat_features = []
@@ -20,88 +22,29 @@ def get_anatomical_features(subj_record):
 
 
 def gsm_attack(args, params, paths, model):
-    logging.info(f'Starting GSMAttack')
-    model_dir = Path(args.experiment_dir, f'{args.model}_model')
-    logging.info(f'Output dir: {model_dir}')
-    pred_filepath = Path(model_dir, 'predictions.csv')
-    pred_df = pd.read_csv(pred_filepath)
-    EPS = [0.0001, 0.001, 0.01, 0.02, 0.05, 0.1]
-    attack_columns = []
-    for eps_rate in EPS:
-        logging.info(f'Starting attack with eps value: {eps_rate}')
-        attack_predictions = []
-        for index, sample in pred_df.iterrows():
-            mri = load_normalized_mri(sample.mri_path)
-            if args.with_anat_feats:
-                anat_features = get_anatomical_features(sample)
-            max_value = mri.max()
-            min_value = mri.min()
-            # model only accepts array of examples so add mri into an array
-            mri = np.expand_dims(mri, axis=0)
-            mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
-            if args.with_anat_feats:
-                input_tensor = [(mri_tensor, anat_features)]
-            else:
-                input_tensor = mri_tensor
-
-            with tf.GradientTape() as tape:
-                tape.watch(input_tensor)
-                pred = model(input_tensor)
-
-            grad = tape.gradient(pred, input_tensor)
-            if args.with_anat_feats:
-                grad = grad[0][0]
-            eps = eps_rate * (max_value - min_value)
-            perturbation = np.sign(grad) * eps
-            # range check - verify it better.
-            adv_mri = mri_tensor + perturbation
-            adv_mri = tf.where(adv_mri > max_value, max_value, adv_mri)
-            adv_mri = tf.where(adv_mri < min_value, min_value, adv_mri)
-            if args.with_anat_feats:
-                adv_input_tensor = [(adv_mri, anat_features)]
-            else:
-                adv_input_tensor = adv_mri
-            new_pred = model.predict(adv_input_tensor)
-            logging.info(
-                f'original prediction: {pred[0][0]}, prediction on adversarial input: {new_pred[0][0]}')
-            attack_predictions.append(new_pred[0][0])
-
-        attack_column = f'{args.attack}_{eps_rate}'
-        attack_columns.append(attack_column)
-        # drop column if exists
-        pred_df = pred_df.drop(attack_column, axis=1, errors='ignore')
-        pred_df[attack_column] = attack_predictions
-        pred_df.to_csv(pred_filepath, index=False)
-
-    plot_categorical_deviation(
-        args, pred_df, attack_columns, paths['plots_dir'])
-
-
-def l0_attack(args, params, paths, model, direction='max'):
-
-    model_dir = Path(args.experiment_dir, f'{args.model}_model')
-    logging.info(f'Output dir: {model_dir}')
-    pred_filepath = Path(model_dir, 'predictions.csv')
-    pred_df = pd.read_csv(pred_filepath)
-    INTERVAL = 10  # 100
-    NUMBERS_INTERVAL = 5  # 40
-    all_predictions = []
-    attack_columns = [
-        f'{args.attack}_{i*NUMBERS_INTERVAL}' for i in range(1, NUMBERS_INTERVAL + 1)]
-    pred_df = pred_df.drop(attack_columns, axis=1, errors='ignore')
-
-    # for sample in pred_df.itertuples():
-    for index, sample in pred_df.iterrows():
-        logging.info(f'\nstarting with index: {index}')
+    logging.info(f'Starting gsm attack')
+    
+    test_df = pd.read_csv(paths['test_data'])
+    EPS_VALUES = [0.0001, 0.001, 0.01, 0.02, 0.05, 0.1]
+    column_names = COLUMN_NAMES + ['predictions'] + EPS_VALUES
+    logging.info(column_names)
+    results = []
+    for index, sample in test_df.iterrows():
+        
+        result = []
+        for column_name in COLUMN_NAMES:
+            result.append(sample[column_name])
+        
         mri = load_normalized_mri(sample.mri_path)
-        if args.with_anat_feats:
+        if args.with_anat_features:
             anat_features = get_anatomical_features(sample)
         max_value = mri.max()
         min_value = mri.min()
+        
+        # model only accepts array of examples so add mri into an array
         mri = np.expand_dims(mri, axis=0)
-        adv_mri = mri.copy()
         mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
-        if args.with_anat_feats:
+        if args.with_anat_features:
             input_tensor = [(mri_tensor, anat_features)]
         else:
             input_tensor = mri_tensor
@@ -109,9 +52,80 @@ def l0_attack(args, params, paths, model, direction='max'):
         with tf.GradientTape() as tape:
             tape.watch(input_tensor)
             pred = model(input_tensor)
+            result.append(pred.numpy()[0][0])
 
         grad = tape.gradient(pred, input_tensor)
-        if args.with_anat_feats:
+        if args.with_anat_features:
+            grad = grad[0][0]
+
+        for eps_rate in EPS_VALUES:
+            eps = eps_rate * (max_value - min_value)
+            perturbation = np.sign(grad) * eps
+            # range check - verify it better.
+            adv_mri = mri_tensor + perturbation
+            adv_mri = tf.where(adv_mri > max_value, max_value, adv_mri)
+            adv_mri = tf.where(adv_mri < min_value, min_value, adv_mri)
+            if args.with_anat_features:
+                adv_input_tensor = [(adv_mri, anat_features)]
+            else:
+                adv_input_tensor = adv_mri
+            new_pred = model.predict(adv_input_tensor)
+            result.append(new_pred[0][0])
+
+        logging.info(result)
+        results.append(result)
+
+    # drop column if exists
+    results_df = pd.DataFrame(results, columns=column_names)
+    model_dir = Path(args.experiment_dir, f'{args.model}_model')
+    df_path = Path(model_dir, f'{args.attack}.csv')
+    results_df.to_csv(df_path, index=False)
+
+    plot_categorical_deviation(
+        args, results_df, EPS_VALUES, paths['plots_dir'])
+    plot_comparison(args, EPS_VALUES, paths['plots_dir'])
+
+
+def l0_attack(args, params, paths, model, direction='max'):
+
+    logging.info(f'Starting l0 attack')
+    test_df = pd.read_csv(paths['test_data'])
+    
+    INTERVAL = 4  # 100
+    NUMBERS_INTERVAL = 2  # 40
+
+    attack_columns = [
+        f'{i*NUMBERS_INTERVAL}' for i in range(1, NUMBERS_INTERVAL + 1)]
+    
+    column_names = COLUMN_NAMES + ['predictions'] + attack_columns
+    logging.info(column_names)
+    results = [] 
+    for index, sample in test_df.iterrows():
+        
+        result = []
+        for column_name in COLUMN_NAMES:
+            result.append(sample[column_name])
+
+        mri = load_normalized_mri(sample.mri_path)
+        if args.with_anat_features:
+            anat_features = get_anatomical_features(sample)
+        max_value = mri.max()
+        min_value = mri.min()
+        mri = np.expand_dims(mri, axis=0)
+        adv_mri = mri.copy()
+        mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
+        if args.with_anat_features:
+            input_tensor = [(mri_tensor, anat_features)]
+        else:
+            input_tensor = mri_tensor
+
+        with tf.GradientTape() as tape:
+            tape.watch(input_tensor)
+            pred = model(input_tensor)
+            result.append(pred.numpy()[0][0])
+
+        grad = tape.gradient(pred, input_tensor)
+        if args.with_anat_features:
             grad = grad[0][0]
         abs_grad = np.abs(grad)
         best_prediction = pred
@@ -135,7 +149,7 @@ def l0_attack(args, params, paths, model, direction='max'):
             for k in np.linspace(min_value, max_value, num=3):
                 adv_mri[argmax_indices] = k
                 adv_input_tensor = adv_mri
-                if args.with_anat_feats:
+                if args.with_anat_features:
                     adv_input_tensor = [(adv_mri, anat_features)]
                 new_pred = model(adv_input_tensor)
                 if(new_pred[0][0] > best_prediction[0][0] and direction == "max") or (
@@ -159,11 +173,15 @@ def l0_attack(args, params, paths, model, direction='max'):
                 #     y_pred_adv = self.model.predict_image(x_adv)
                 #     self.save_variables([x, x_adv, predictions[0], y_pred_adv[0][0]])
                 break
-        all_predictions.append(predictions)
-        predictions_df = pd.DataFrame(
-            all_predictions, columns=attack_columns)
-        new_df = pd.concat(
-            [pred_df, predictions_df], axis=1)
-        new_df.to_csv(pred_filepath, index=False)
+        
+        result = result + predictions
+        logging.info(result)
+        results.append(result)
+        
+    results_df = pd.DataFrame(results, columns=column_names)
+    model_dir = Path(args.experiment_dir, f'{args.model}_model')
+    df_path = Path(model_dir, f'{args.attack}.csv')
+    results_df.to_csv(df_path, index=False)
     plot_categorical_deviation(
-        args, new_df, attack_columns, paths['plots_dir'])
+        args, results_df, attack_columns, paths['plots_dir'])
+    plot_comparison(args, attack_columns, paths['plots_dir'])

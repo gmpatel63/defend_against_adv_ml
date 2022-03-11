@@ -11,6 +11,7 @@ from .datasets import create_tf_dataset
 from .models import cnn_model, context_aware_model, load_saved_model
 from .plots import plot_history
 
+COLUMN_NAMES = ['dataset', 'site_name', 'subject_id', 'age', 'predictions']
 
 def train_model(args, params, paths):
 
@@ -34,14 +35,18 @@ def train_model(args, params, paths):
 
         # create callback
         save_model_dir = Path(model_dir, 'model')
-        checkpoint = ModelCheckpoint(filepath=save_model_dir,
-                                     monitor='val_loss',
-                                     verbose=1,
-                                     save_best_only=True,
-                                     mode='min')
-        callbacks = [checkpoint]
+        callbacks = []
+        if params.model_check_point == True:
+            logging.info('adding ModelCheckpoint to callbacks')
+            checkpoint = ModelCheckpoint(filepath=save_model_dir,
+                                        monitor='val_loss',
+                                        verbose=1,
+                                        save_best_only=True,
+                                        mode='min')
+            callbacks.append(checkpoint)
 
-        if(params.variable_learning_rate == True):
+        if params.variable_learning_rate == True:
+            logging.info('adding ReduceLROnPlateau to callbacks')
             reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
                                         patience=5, min_lr=params.min_learning_rate, verbose=1)
             callbacks.append(reduce_lr)
@@ -96,6 +101,14 @@ def evaluate_model(args, params, paths):
     logging.info(f'RMSE of the {args.model} model: {rmse}')
     model_dir = paths[f'{args.model}_model']
     predictions_csv_path = Path(model_dir, f'predictions.csv')
-    test_df.to_csv(predictions_csv_path, index=False, columns=[
-                   'dataset', 'site_name', 'subject_id', 'age', 'predictions'])
+    test_df.to_csv(predictions_csv_path, index=False, columns=COLUMN_NAMES)
+    
+    results_csv_path = Path(model_dir, f'results.csv')
+    if results_csv_path.exists():
+        results_df = pd.read_csv(results_csv_path)
+        results_df.loc['rmse'] = {args.model: rmse}
+    else:
+        results_df = pd.DataFrame([rmse], columns=[args.model], index=['rmse'])
+    results_df.to_csv(results_csv_path)
+    
     logging.info(f'--------------------------------------------------')
