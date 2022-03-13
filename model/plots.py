@@ -32,10 +32,10 @@ def plot_history(history, output_dir):
     plt.clf()
 
 def findDeviation(df, col1, col2):
-    return (df[col1] - df[col2]).abs().mean()
+    return (df[str(col1)] - df[str(col2)]).abs().mean()
 
 def plot_categorical_deviation(args, df, attack_columns, output_dir):
-  
+    df.columns = df.columns.map(str)
     df0_14 = df.query('age < 15')
     df15_25 = df.query('age >= 15 and age <= 25')
     df26_50 = df.query('age > 25 and age <= 50')
@@ -54,8 +54,8 @@ def plot_categorical_deviation(args, df, attack_columns, output_dir):
         deviation_df = deviation_df.append({'perturbation': attack_column, '<15': c1, '15-25': c2, '26-50': c3, '51-65': c4, '>65': c5}, ignore_index=True)
         
     fig, ax1 = plt.subplots(figsize=(10, 10))
-    melted_df = deviation_df.melt(id_vars='attack', value_vars=['<15', '15-25', '26-50', '51-65', '>65'])
-    deviation_plt = sns.barplot(x='attack', y='deviation', hue='variable', data=melted_df, ax=ax1)
+    melted_df = deviation_df.melt(id_vars='perturbation', value_vars=['<15', '15-25', '26-50', '51-65', '>65'])
+    deviation_plt = sns.barplot(x='perturbation', y='value', hue='variable', data=melted_df, ax=ax1)
     deviation_plt.legend()
     plot_file_path = Path(output_dir, f'{args.model}_{args.attack}_categorical_deviation.png')
     plt.savefig(plot_file_path)
@@ -78,7 +78,9 @@ def plot_comparison(args, perturbation_columns, output_dir):
         
         model_deviation = []
         attack_results_file = Path(model_dir, f'{args.attack}.csv')
-        assert attack_results_file
+        if not attack_results_file.exists():
+            logging.info(f'gsm.csv FileNotFound: Skipping comparison of {args.attack} attack for {args.model}.')
+            continue
         attack_df = pd.read_csv(attack_results_file)
         
         results_path = Path(model_dir, 'results.csv')
@@ -88,11 +90,12 @@ def plot_comparison(args, perturbation_columns, output_dir):
             deviation = findDeviation(attack_df, prediction_column, column_name)
             logging.info(f'perturbation: {column_name}, deviation: {deviation}')
             model_deviation.append(deviation)
-            results_df.loc[f'{args.attack}_{column_name}'] = {args.model: deviation}
+            results = {'metric':f'{args.attack}_{column_name}', 'result/deviation': deviation}
+            results_df = results_df.append(results, ignore_index=True)
         
         model_name = model_dir.name
         deviation_df[model_name] = model_deviation
-        results_df.to_csv(results_path)
+        results_df.to_csv(results_path, index=False)
     
     fig, ax1 = plt.subplots(figsize=(10, 10))
     melted_df = deviation_df.melt(id_vars='perturbation', value_vars=model_names)
@@ -100,7 +103,9 @@ def plot_comparison(args, perturbation_columns, output_dir):
     #     x_column_name = 'eps (noise)'
     # elif args.attack == 'l0':
     #    x_column_name = '|.|'
-    deviation_plt = sns.barplot(x='perturbation', y='deviation', hue='variable', data=melted_df, ax=ax1)
+    experiment_name = experiment_dir.name
+    plt.title(f'{experiment_name} - {args.attack}')
+    deviation_plt = sns.barplot(x='perturbation', y='value', hue='variable', data=melted_df, ax=ax1)
     deviation_plt.legend()
     plot_file_path = Path(output_dir, f'{args.attack}_comparison.png')
     plt.savefig(plot_file_path)

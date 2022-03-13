@@ -8,10 +8,11 @@ from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.models import load_model
 
 from .datasets import create_tf_dataset
-from .models import cnn_model, context_aware_model, load_saved_model
+from .models import load_saved_model, get_model
 from .plots import plot_history
 
 COLUMN_NAMES = ['dataset', 'site_name', 'subject_id', 'age', 'predictions']
+
 
 def train_model(args, params, paths):
 
@@ -22,14 +23,9 @@ def train_model(args, params, paths):
 
     strategy = tf.distribute.MirroredStrategy()
     with strategy.scope():
-        if args.model == 'cnn':
-            model = cnn_model(params)
-            model_dir = paths['cnn_model']
-        elif args.model == 'context_aware':
-            cnn_dir = Path(paths['cnn_model'], 'model')
-            assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
-            model = context_aware_model(params, cnn_dir)
-            model_dir = paths['context_aware_model']
+        model = get_model(args, params, paths)
+        model_dir_name = f'{args.model}_model'
+        model_dir = Path(args.experiment_dir, model_dir_name)
 
         model_dir.mkdir(exist_ok=True)
 
@@ -39,16 +35,16 @@ def train_model(args, params, paths):
         if params.model_check_point == True:
             logging.info('adding ModelCheckpoint to callbacks')
             checkpoint = ModelCheckpoint(filepath=save_model_dir,
-                                        monitor='val_loss',
-                                        verbose=1,
-                                        save_best_only=True,
-                                        mode='min')
+                                         monitor='val_loss',
+                                         verbose=1,
+                                         save_best_only=True,
+                                         mode='min')
             callbacks.append(checkpoint)
 
         if params.variable_learning_rate == True:
             logging.info('adding ReduceLROnPlateau to callbacks')
             reduce_lr = ReduceLROnPlateau(monitor='val_loss', factor=0.2,
-                                        patience=5, min_lr=params.min_learning_rate, verbose=1)
+                                          patience=5, min_lr=params.min_learning_rate, verbose=1)
             callbacks.append(reduce_lr)
 
         logging.info(f'--------------------------------------------------')
@@ -102,13 +98,13 @@ def evaluate_model(args, params, paths):
     model_dir = paths[f'{args.model}_model']
     predictions_csv_path = Path(model_dir, f'predictions.csv')
     test_df.to_csv(predictions_csv_path, index=False, columns=COLUMN_NAMES)
-    
+
     results_csv_path = Path(model_dir, f'results.csv')
     if results_csv_path.exists():
         results_df = pd.read_csv(results_csv_path)
-        results_df.loc['rmse'] = {args.model: rmse}
+        results_df = results_df.append(['rmse', rmse])
     else:
-        results_df = pd.DataFrame([rmse], columns=[args.model], index=['rmse'])
-    results_df.to_csv(results_csv_path)
-    
+        results_df = pd.DataFrame(['rmse', rmse], columns=['metric', 'result/deviation'],)
+    results_df.to_csv(results_csv_path, index=False)
+
     logging.info(f'--------------------------------------------------')

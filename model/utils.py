@@ -20,8 +20,7 @@ def parse_args():
     parser.add_argument('--work_dir', required=True, type=str,
                         help='main work dir containing \'model_input_data\' folder')
 
-    parser.add_argument('--model', required=True, choices=['cnn', 'context_aware'],
-                        help='cnn or context_aware')
+    parser.add_argument('--model', required=True, choices=config.MODEL_NAMES)
 
     parser.add_argument('--train', dest='train', action='store_true',
                         help='train the model')
@@ -126,7 +125,8 @@ def get_paths(args):
         'test_data': Path(csv_dir, 'test_data.csv'),
         'plots_dir': Path(args.experiment_dir, 'plots'),
         'cnn_model': Path(args.experiment_dir, config.CNN_DIR),
-        'context_aware_model': Path(args.experiment_dir, config.CONTEXT_AWARE_MODEL_DIR)
+        'context_aware_model': Path(args.experiment_dir, config.CONTEXT_AWARE_MODEL_DIR),
+        'enhanced_context_aware_model': Path(args.experiment_dir, config.ENHANCED_CONTEXT_AWARE_MODEL_DIR)
     }
     return paths
 
@@ -134,18 +134,18 @@ def get_paths(args):
 # def change_work_dir_in_datasets(csv_dir_path, old_work_dir_path, new_work_dir_path):
 #     '''
 #     change path of 'mri_path' in dataset csvs
-#     
+#
 #     Example:
 #     change '/path/to/work_dir/model_input_data/ABIDE_I/Leuven1_0050691.nii.gz'
 #     to '/new_path/new_work_dir/model_input_data/ABIDE_I/Leuven1_0050691.nii.gz'
 #     '''
 #     csv_dir = Path(csv_dir_path)
 #     assert csv_dir.exists(), f'invalid path: {csv_dir}'
-#     
+#
 #     for path in csv_dir.iterdir():
 #         if path.suffix != '.csv' or path.is_dir():
 #             continue
-#         
+#
 #         df = pd.read_csv(path)
 #         df['mri_path'] = df['mri_path'].str.replace(old_work_dir_path, new_work_dir_path)
 #         df.to_csv(path, index=False)

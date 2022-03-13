@@ -7,6 +7,7 @@ from tensorflow.keras.layers import Input, Dropout, Activation, Dense, BatchNorm
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.models import load_model
 
+
 def cnn_model(params):
     cnn = Sequential()
     cnn.add(Conv3D(filters=8, kernel_size=[3, 3, 3], strides=[1, 1, 1],
@@ -106,6 +107,7 @@ def context_aware_model(params, cnn_dir):
         Adam(lr=params.learning_rate), loss='mean_squared_error')
     return model2
 
+
 def enhanced_context_aware_model(params, cnn_dir):
     cnn = load_model(cnn_dir)
 
@@ -143,11 +145,24 @@ def enhanced_context_aware_model(params, cnn_dir):
     return model2
 
 
-def load_saved_model(args, paths):
+def get_model(args, params, paths):
     if args.model == 'cnn':
-        model_dir = paths['cnn_model']
-    elif args.model == 'context_aware':
-        model_dir = paths['context_aware_model']
+        model = cnn_model(params)
+    else:
+        cnn_dir = Path(paths['cnn_model'], 'model')
+        assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
+        if args.model == 'context_aware':
+            model = context_aware_model(params, cnn_dir)
+        elif args.model == 'enhanced_context_aware':
+            model = enhanced_context_aware_model(params, cnn_dir)
+
+    return model
+
+
+def load_saved_model(args, paths):
+
+    model_dir_name = f'{args.model}_model'
+    model_dir = Path(args.experiment_dir, model_dir_name)
 
     saved_model_dir = Path(model_dir, 'model')
     assert saved_model_dir.exists, f'{args.model} model is not saved at: {saved_model_dir}'
