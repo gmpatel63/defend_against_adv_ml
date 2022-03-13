@@ -104,7 +104,7 @@ def evaluate_model(args, params, paths):
         results_df = pd.read_csv(results_csv_path)
         results_df = results_df.append(['rmse', rmse])
     else:
-        results_df = pd.DataFrame(['rmse', rmse], columns=['metric', 'result/deviation'],)
+        results_df = pd.DataFrame([['rmse', rmse]], columns=['metric', 'result/deviation'],)
     results_df.to_csv(results_csv_path, index=False)
 
     logging.info(f'--------------------------------------------------')
