@@ -91,8 +91,8 @@ def l0_attack(args, params, paths, model, direction='max'):
     logging.info(f'Starting l0 attack')
     test_df = pd.read_csv(paths['test_data'])
     
-    INTERVAL = 4  # 100
-    NUMBERS_INTERVAL = 2  # 40
+    INTERVAL = 10  # 100
+    NUMBERS_INTERVAL = 5  # 40
 
     attack_columns = [
         f'{i*NUMBERS_INTERVAL}' for i in range(1, NUMBERS_INTERVAL + 1)]
