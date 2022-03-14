@@ -74,12 +74,12 @@ def plot_comparison(args, perturbation_columns, output_dir):
     deviation_df['perturbation'] = perturbation_columns
 
     for model_dir in model_dirs:
-        logging.info(f'finding deviation for model: {args.model}')
+        logging.info(f'finding deviation for model: {model_dir.name}')
         
         model_deviation = []
         attack_results_file = Path(model_dir, f'{args.attack}.csv')
         if not attack_results_file.exists():
-            logging.info(f'gsm.csv FileNotFound: Skipping comparison of {args.attack} attack for {args.model}.')
+            logging.info(f'gsm.csv FileNotFound: Skipping comparison of {args.attack} attack for {model_dir.name}.')
             continue
         attack_df = pd.read_csv(attack_results_file)
         
@@ -90,8 +90,12 @@ def plot_comparison(args, perturbation_columns, output_dir):
             deviation = findDeviation(attack_df, prediction_column, column_name)
             logging.info(f'perturbation: {column_name}, deviation: {deviation}')
             model_deviation.append(deviation)
-            results = {'metric':f'{args.attack}_{column_name}', 'result/deviation': deviation}
-            results_df = results_df.append(results, ignore_index=True)
+            results_column_name = f'{args.attack}_{column_name}' 
+            if results_column_name in results_df.values:
+                results_df.loc[results_df['metric'] == results_column_name, 'result/deviation'] = deviation
+            else:
+                results = {'metric':f'{args.attack}_{column_name}', 'result/deviation': deviation}
+                results_df = results_df.append(results, ignore_index=True)
         
         model_name = model_dir.name
         deviation_df[model_name] = model_deviation
