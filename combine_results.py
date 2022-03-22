@@ -31,7 +31,7 @@ def main():
             results_data.append(model_results)
 
     all_results = pd.DataFrame(results_data)
-    all_results.to_csv(Path(experiments_dir, 'comparison.csv'))
+    all_results.to_csv(Path(experiments_dir, 'comparison.csv', index=False))
 
 
 if __name__ == '__main__':
