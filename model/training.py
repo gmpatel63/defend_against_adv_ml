@@ -102,7 +102,8 @@ def evaluate_model(args, params, paths):
     results_csv_path = Path(model_dir, f'results.csv')
     if results_csv_path.exists():
         results_df = pd.read_csv(results_csv_path)
-        results_df = results_df.append(['rmse', rmse])
+        results = {'metric':'rmse', 'result/deviation': rmse}
+        results_df = results_df.append(results, ignore_index=True)
     else:
         results_df = pd.DataFrame([['rmse', rmse]], columns=['metric', 'result/deviation'],)
     results_df.to_csv(results_csv_path, index=False)
