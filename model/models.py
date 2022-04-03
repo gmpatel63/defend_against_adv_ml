@@ -108,6 +108,72 @@ def context_aware_model(params, cnn_dir):
     return model2
 
 
+def unfreezed_context_aware_model(params):
+    input_1 = Input(shape=(172, 220, 156, 1))
+    branch1 = Conv3D(filters=8, kernel_size=[3, 3, 3], strides=[1, 1, 1],
+                    padding="same", data_format="channels_last", dilation_rate=[1, 1, 1],
+                    bias_initializer='zeros', activation="relu", name="conv3d_1")(input_1)
+
+    branch1 = MaxPool3D(pool_size=(2, 2, 2), strides=(
+        2, 2, 2), padding='valid', data_format="channels_last", name="maxpool3d_1")(branch1)
+
+    branch1 = Conv3D(filters=16, kernel_size=[3, 3, 3], strides=[1, 1, 1],
+                    padding="same", data_format="channels_last", dilation_rate=[1, 1, 1],
+                    bias_initializer='zeros', activation="relu", name="conv3d_2")(branch1)
+
+    branch1 = MaxPool3D(pool_size=(2, 2, 2), strides=(
+        2, 2, 2), padding='valid', data_format="channels_last", name="maxpool3d_2")(branch1)
+
+    branch1 = Conv3D(filters=32, kernel_size=[3, 3, 3], strides=[1, 1, 1],
+                    padding="same", data_format="channels_last", dilation_rate=[1, 1, 1],
+                    bias_initializer='zeros', activation="relu", name="conv3d_3")(branch1)
+
+    branch1 = MaxPool3D(pool_size=(2, 2, 2), strides=(
+        2, 2, 2), padding='valid', data_format="channels_last", name="maxpool3d_3")(branch1)
+
+    branch1 = Conv3D(filters=64, kernel_size=[3, 3, 3], strides=[1, 1, 1],
+                    padding="same", data_format="channels_last", dilation_rate=[1, 1, 1],
+                    bias_initializer='zeros', activation="relu", name="conv3d_4")(branch1)
+
+    branch1 = MaxPool3D(pool_size=(2, 2, 2), strides=(
+        2, 2, 2), padding='valid', data_format="channels_last", name="maxpool3d_4")(branch1)
+
+    branch1 = Conv3D(filters=128, kernel_size=[3, 3, 3], strides=[1, 1, 1],
+                    padding="same", data_format="channels_last", dilation_rate=[1, 1, 1],
+                    bias_initializer='zeros', activation="relu", name="conv3d_5")(branch1)
+
+    branch1 = MaxPool3D(pool_size=(2, 2, 2), strides=(
+        2, 2, 2), padding='valid', data_format="channels_last", name="maxpool3d_5")(branch1)
+
+    branch1 = Flatten(name="flatten_1")(branch1)
+    
+    branch_1 = BatchNormalization()(branch1)
+    branch_1 = Dropout(.2)(branch_1)
+    branch_1 = Dense(128)(branch_1)
+    branch_1 = Activation('relu')(branch_1)
+    branch_1 = Dropout(.2)(branch_1)
+    branch_1 = Dense(128)(branch_1)
+    branch_1 = Activation('relu')(branch_1)
+
+    input_2 = Input(shape=(132))
+    branch_2 = Dense(128)(input_2)
+    branch_2 = Dropout(.2)(branch_2)
+    branch_2 = Activation('relu')(input_2)
+
+    x = concatenate([branch_1, branch_2])
+    x = Dropout(.2)(x)
+    x = Dense(128)(x)
+    x = Activation('relu')(x)
+    x = Dense(128)(x)
+    x = Activation('relu')(x)
+    x = Dense(1)(x)
+
+    model = tf.keras.Model(inputs=[input_1, input_2], outputs=x)
+    model.compile(
+        Adam(lr=params.learning_rate), loss='mean_squared_error')
+    return model
+
+
 def enhanced_context_aware_model(params, cnn_dir):
     cnn = load_model(cnn_dir)
 
@@ -153,6 +219,8 @@ def get_model(args, params, paths):
         assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
         if args.model == 'context_aware':
             model = context_aware_model(params, cnn_dir)
+        elif args.model == 'unfreezed_context_aware':
+            model = unfreezed_context_aware_model(params)
         elif args.model == 'enhanced_context_aware':
             model = enhanced_context_aware_model(params, cnn_dir)
 

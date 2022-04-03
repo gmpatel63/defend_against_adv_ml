@@ -3,10 +3,11 @@ DATA_DIR = 'model_input_data'
 CSV_DIR = 'dataset_csvs'
 OUTPUT_DIR_NAME = 'outputs'
 INPUT_FNAME = 'input_data.csv'
-MODEL_NAMES = ['cnn', 'context_aware', 'enhanced_context_aware']
+MODEL_NAMES = ['cnn', 'context_aware', 'enhanced_context_aware', 'unfreezed_context_aware']
 CNN_DIR = 'cnn_model'
 CONTEXT_AWARE_MODEL_DIR = 'context_aware_model'
 ENHANCED_CONTEXT_AWARE_MODEL_DIR = 'enhanced_context_aware_model'
+UNFREEZED_CONTEXT_AWARE_MODEL_DIR = 'unfreezed_context_aware_model'
 
 # constants
 MRI_SHAPE = (172, 220, 156, 1)

@@ -126,7 +126,8 @@ def get_paths(args):
         'plots_dir': Path(args.experiment_dir, 'plots'),
         'cnn_model': Path(args.experiment_dir, config.CNN_DIR),
         'context_aware_model': Path(args.experiment_dir, config.CONTEXT_AWARE_MODEL_DIR),
-        'enhanced_context_aware_model': Path(args.experiment_dir, config.ENHANCED_CONTEXT_AWARE_MODEL_DIR)
+        'enhanced_context_aware_model': Path(args.experiment_dir, config.ENHANCED_CONTEXT_AWARE_MODEL_DIR),
+        'unfreezed_context_aware_model': Path(args.experiment_dir, config.UNFREEZED_CONTEXT_AWARE_MODEL_DIR)
     }
     return paths
 
