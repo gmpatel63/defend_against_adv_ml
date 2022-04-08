@@ -6,8 +6,12 @@ import numpy as np
 import nibabel as nib
 import pandas as pd
 import tensorflow as tf
+from tensorflow.keras.models import load_model
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 
 from . import config
+from .utils import get_paths
+from .models import create_transform_layer
 
 ROUNDED_AGE_CLMN = 'rounded_age'
 
@@ -65,6 +69,43 @@ def create_datasets(input_df, params):
     return train_df, valid_df, test_df
 
 
+def preprocess_anatomical_features(train_df, valid_df, test_df):
+    training_anat_features = train_df[config.ANATOMICAL_COLUMNS].to_numpy()
+    mm_scaler = MinMaxScaler(feature_range=(-1, 1))
+    scaled_train_feats = mm_scaler.fit_transform(training_anat_features)
+
+    std_scaler = StandardScaler(with_mean=True, with_std=False)
+    scaled_train_feats = std_scaler.fit_transform(scaled_train_feats)
+
+    train_anat_df = pd.DataFrame(
+        scaled_train_feats, columns=config.ANATOMICAL_COLUMNS)
+
+    other_train_feats = train_df.drop(config.ANATOMICAL_COLUMNS, axis=1)
+    scaled_train_df = pd.concat([other_train_feats, train_anat_df], axis=1)
+    
+    validation_anat_features = valid_df[config.ANATOMICAL_COLUMNS].to_numpy()
+    test_anat_features = test_df[config.ANATOMICAL_COLUMNS].to_numpy()
+
+    scaled_valid_feats = mm_scaler.transform(validation_anat_features)
+    scaled_test_feats = mm_scaler.transform(test_anat_features)
+    
+    scaled_valid_feats = std_scaler.transform(scaled_valid_feats)
+    scaled_test_feats = std_scaler.transform(scaled_test_feats)
+    
+    valid_anat_df =pd.DataFrame(
+        scaled_valid_feats, columns=config.ANATOMICAL_COLUMNS) 
+    test_anat_df =pd.DataFrame(
+        scaled_test_feats, columns=config.ANATOMICAL_COLUMNS)
+    
+    other_valid_feats = valid_df.drop(config.ANATOMICAL_COLUMNS, axis=1)
+    other_test_feats = test_df.drop(config.ANATOMICAL_COLUMNS, axis=1) 
+    
+    scaled_valid_df = pd.concat([other_valid_feats, valid_anat_df], axis=1)
+    scaled_test_df = pd.concat([other_test_feats, test_anat_df], axis=1)
+    
+    return scaled_train_df, scaled_valid_df, scaled_test_df
+
+
 def create_and_plot_data_csvs(args, params, paths):
     '''
     - Read all input data from data_dir
@@ -106,6 +147,8 @@ def create_and_plot_data_csvs(args, params, paths):
 
     train_df, valid_df, test_df = create_datasets(input_df, params)
 
+    train_df, valid_df, test_df = preprocess_anatomical_features(
+        train_df, valid_df, test_df)
     plot_dataset(train_df, plots_dir, 'Training Data Distribution')
     plot_dataset(valid_df, plots_dir,
                  'Validation Data Distribution')
@@ -131,7 +174,22 @@ def load_normalized_mri(image_path):
     return mri_array
 
 
-def create_generator(dataset_df, with_anat_features=False):
+def create_generator(dataset_df, args):
+    with_anat_features = args.with_anat_features
+
+    if with_anat_features and args.model == 'context_aware' and args.train:
+        paths = get_paths(args)
+        cnn_dir = Path(paths['cnn_model'], 'model')
+        assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
+        cnn = load_model(cnn_dir)
+        cnn_input = cnn.layers[0].input
+        cnn_l10_output = cnn.layers[10].output
+        transform = create_transform_layer(paths)
+        output_after_transform = tf.keras.layers.Lambda(
+            transform)(cnn_l10_output)
+        transform_model = tf.keras.Model(
+            inputs=cnn_input, outputs=output_after_transform)
+
     def generator():
         for index, row in dataset_df.iterrows():
             image_path = row['mri_path']
@@ -143,8 +201,16 @@ def create_generator(dataset_df, with_anat_features=False):
                 for anat_column in config.ANATOMICAL_COLUMNS:
                     anat_features.append(row[anat_column])
                 anat_features = np.array(anat_features)
+
+                if args.model == 'context_aware' and args.train:
+                    image_data = np.expand_dims(image_data, axis=0)
+                    prediction = transform_model.predict(image_data)
+                    image_data = prediction[0]
+
                 features = (image_data, anat_features)
+
             yield features, [label]
+
     return generator
 
 
@@ -154,12 +220,13 @@ def create_tf_dataset(df_path, args, params, training=False):
     '''
     logging.info(f'creating tf.data.Dataset from: {df_path.name}')
     df = pd.read_csv(df_path)
-    generator = create_generator(df, args.with_anat_features)
+    generator = create_generator(df, args)
     # Disable AutoShard.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
 
     mri_spec = tf.TensorSpec(shape=config.MRI_SHAPE, dtype=tf.float32)
+    cnn_transform_spec = tf.TensorSpec(shape=(15360), dtype=tf.float32)
     anat_features_spec = tf.TensorSpec(
         shape=config.ANAT_FEAT_SHAPE, dtype=tf.float32)
     label_spec = tf.TensorSpec(shape=config.OUTPUT_SHAPE, dtype=tf.float32)
@@ -167,8 +234,12 @@ def create_tf_dataset(df_path, args, params, training=False):
     dataset = tf.data.Dataset.from_generator(
         generator, output_signature=(mri_spec, label_spec))
     if args.with_anat_features:
-        dataset = tf.data.Dataset.from_generator(
-            generator, output_signature=((mri_spec, anat_features_spec), label_spec))
+        if args.model == 'context_aware' and args.train:
+            dataset = tf.data.Dataset.from_generator(
+                generator, output_signature=((cnn_transform_spec, anat_features_spec), label_spec))
+        else:
+            dataset = tf.data.Dataset.from_generator(
+                generator, output_signature=((mri_spec, anat_features_spec), label_spec))
 
     if training:
         dataset = dataset.shuffle(config.TF_DATASET_BUFFER)

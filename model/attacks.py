@@ -25,7 +25,7 @@ def gsm_attack(args, params, paths, model):
     logging.info(f'Starting gsm attack')
     
     test_df = pd.read_csv(paths['test_data'])
-    EPS_VALUES = [0.0001, 0.001, 0.01, 0.02, 0.05, 0.1]
+    EPS_VALUES = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005]
     column_names = COLUMN_NAMES + ['predictions'] + EPS_VALUES
     logging.info(column_names)
     results = []
@@ -75,7 +75,6 @@ def gsm_attack(args, params, paths, model):
         logging.info(result)
         results.append(result)
 
-    # drop column if exists
     results_df = pd.DataFrame(results, columns=column_names)
     model_dir = Path(args.experiment_dir, f'{args.model}_model')
     df_path = Path(model_dir, f'{args.attack}.csv')

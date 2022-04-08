@@ -4,6 +4,7 @@ import pickle
 import pandas as pd
 import tensorflow as tf
 from pathlib import Path
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from tensorflow.keras.callbacks import ModelCheckpoint, ReduceLROnPlateau
 from tensorflow.keras.models import load_model
 
@@ -75,7 +76,22 @@ def train_model(args, params, paths):
 
     plot_history(hist.history, paths['plots_dir'])
 
-
+def create_normer_and_scaler(args, paths, conv_features):
+    min_max_scaler = MinMaxScaler(feature_range=(-1,1))
+    scaled_conv_feats = min_max_scaler.fit_transform(conv_features)
+    
+    mm_scaler_file = Path(paths[f'{args.model}_model'], 'min_max_scaler')
+    with open(mm_scaler_file, 'wb') as file_pi:
+        pickle.dump(min_max_scaler, file_pi)
+    
+    std_scaler = StandardScaler(with_mean=True, with_std=False)
+    std_scaler.fit(scaled_conv_feats)
+    
+    std_scaler_file = Path(paths[f'{args.model}_model'], 'std_scaler') 
+    with open(std_scaler_file, 'wb') as file_pi:
+        pickle.dump(std_scaler, file_pi)
+    
+    
 def evaluate_model(args, params, paths):
     '''
     make predictions on test dataset, save it in csv and calculate RMSE
@@ -89,6 +105,16 @@ def evaluate_model(args, params, paths):
         model = load_saved_model(args, paths)
         # evaluate model
         predictions = model.predict(x=test_dataset)
+        
+        # get output of flatten layer of cnn and find a normer and scaler for that output
+        # that output is being used in context aware model
+        if args.model == 'cnn':
+            model = load_saved_model(args, paths)
+            cnn_input_layer = model.layers[0].input
+            cnn_layer_10 = model.layers[10].output
+            temp_model = tf.keras.Model(inputs=cnn_input_layer, outputs=cnn_layer_10)
+            conv_features = temp_model.predict(x=test_dataset)
+            create_normer_and_scaler(args, paths, conv_features)
 
     test_df = pd.read_csv(paths['test_data'])
     test_df['predictions'] = predictions
@@ -109,3 +135,4 @@ def evaluate_model(args, params, paths):
     results_df.to_csv(results_csv_path, index=False)
 
     logging.info(f'--------------------------------------------------')
+    

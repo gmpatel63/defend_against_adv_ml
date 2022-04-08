@@ -1,6 +1,6 @@
+import pickle
+import tensorflow as tf
 from pathlib import Path
-import tensorflow as tf
-import tensorflow as tf
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Conv3D, MaxPool3D, Flatten, Dense
 from tensorflow.keras.layers import Input, Dropout, Activation, Dense, BatchNormalization, concatenate
@@ -67,23 +67,33 @@ def cnn_model(params):
 
     return cnn
 
+def create_transform_layer(paths):
+    
+    def transform(X):
+        mm_scaler_path = Path(paths['cnn_model'], 'min_max_scaler')
+        sc_scaler_path = Path(paths['cnn_model'], 'std_scaler')
+        
+        with open(mm_scaler_path, 'rb') as mm_scaler_file:
+            MM = pickle.load(mm_scaler_file)
+            
+        with open(sc_scaler_path, 'rb') as sc_scaler_file:
+            SC = pickle.load(sc_scaler_file)
+        
+        X= tf.math.multiply(X, MM.scale_)
+        X = tf.math.add(X, MM.min_)
+        if SC.with_mean:
+            X = tf.math.subtract(X, SC.mean_)
+        if SC.with_std:
+            X = tf.math.div(X, SC.scale_)
+        return X
+    
+    return transform
 
-def context_aware_model(params, cnn_dir):
-    cnn = load_model(cnn_dir)
 
-    cnn_input = cnn.layers[0].input
-    cnn_l10_output = cnn.layers[10].output
-
-    # make first 10 layers non-trainable
-    for layer in cnn.layers[:11]:
-        layer.trainable = False
-
-    # to-do transform the output here
-
-    # input_1 = Input(shape=(15360))
-    # branch_1 = Dropout(.2)(input_1)
-    branch_1 = BatchNormalization()(cnn_l10_output)
-    branch_1 = Dropout(.2)(branch_1)
+def context_aware_model(params):
+    
+    input_1 = Input(shape=(15360))
+    branch_1 = Dropout(.2)(input_1)
     branch_1 = Dense(128)(branch_1)
     branch_1 = Activation('relu')(branch_1)
     branch_1 = Dropout(.2)(branch_1)
@@ -94,15 +104,14 @@ def context_aware_model(params, cnn_dir):
     branch_2 = Activation('relu')(input_2)
 
     x = concatenate([branch_1, branch_2])
-    # x = BatchNormalization()(x)
     x = Dropout(.2)(x)
-    x = Dense(128)(x)
+    x = Dense(10)(x)
     x = Activation('relu')(x)
-    x = Dense(128)(x)
+    x = Dense(10)(x)
     x = Activation('relu')(x)
     x = Dense(1)(x)
 
-    model2 = tf.keras.Model(inputs=[cnn_input, input_2], outputs=x)
+    model2 = tf.keras.Model(inputs=[input_1, input_2], outputs=x)
     model2.compile(
         Adam(lr=params.learning_rate), loss='mean_squared_error')
     return model2
@@ -218,7 +227,7 @@ def get_model(args, params, paths):
         cnn_dir = Path(paths['cnn_model'], 'model')
         assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
         if args.model == 'context_aware':
-            model = context_aware_model(params, cnn_dir)
+            model = context_aware_model(params)
         elif args.model == 'unfreezed_context_aware':
             model = unfreezed_context_aware_model(params)
         elif args.model == 'enhanced_context_aware':
@@ -235,4 +244,16 @@ def load_saved_model(args, paths):
     saved_model_dir = Path(model_dir, 'model')
     assert saved_model_dir.exists, f'{args.model} model is not saved at: {saved_model_dir}'
     model = load_model(saved_model_dir)
+    if args.model == 'context_aware':
+        cnn_dir = Path(paths['cnn_model'], 'model')
+        assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
+        cnn = load_model(cnn_dir)
+        cnn_input = cnn.layers[0].input
+        cnn_l10_output = cnn.layers[10].output
+        transform = create_transform_layer(paths)
+        output_after_transform = tf.keras.layers.Lambda(
+            transform)(cnn_l10_output)
+        model2_input = tf.keras.layers.Input((132))
+        second_stage_output = model([output_after_transform, model2_input])
+        model = tf.keras.Model(inputs=[cnn_input, model2_input], outputs=second_stage_output)
     return model

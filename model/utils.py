@@ -22,12 +22,7 @@ def parse_args():
 
     parser.add_argument('--model', required=True, choices=config.MODEL_NAMES)
 
-    parser.add_argument('--train', dest='train', action='store_true',
-                        help='train the model')
-
-    parser.add_argument('--evaluate', dest='evaluate', action='store_true',
-                        help='evaluate the model')
-
+    parser.add_argument('--op', choices=['train', 'evaluate'])
     parser.add_argument('--attack', help='gsm or l0')
 
     # parser.add_argument(
@@ -35,6 +30,16 @@ def parse_args():
 
     args = parser.parse_args()
     assert Path(args.work_dir).is_dir(), f'invalid path for work_dir'
+    
+    args.train = False
+    args.evaluate = False
+        
+    if args.op == 'train':
+        args.train = True
+        args.evaluate = False
+    elif args.op == 'evaluate':
+        args.train = False
+        args.evaluate = True
 
     if args.model == 'cnn':
         args.with_anat_features = False
