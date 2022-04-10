@@ -174,21 +174,7 @@ def load_normalized_mri(image_path):
     return mri_array
 
 
-def create_generator(dataset_df, args):
-    with_anat_features = args.with_anat_features
-
-    if with_anat_features and args.model == 'context_aware' and args.train:
-        paths = get_paths(args)
-        cnn_dir = Path(paths['cnn_model'], 'model')
-        assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
-        cnn = load_model(cnn_dir)
-        cnn_input = cnn.layers[0].input
-        cnn_l10_output = cnn.layers[10].output
-        transform = create_transform_layer(paths)
-        output_after_transform = tf.keras.layers.Lambda(
-            transform)(cnn_l10_output)
-        transform_model = tf.keras.Model(
-            inputs=cnn_input, outputs=output_after_transform)
+def create_generator(dataset_df, args, transform_model=None):
 
     def generator():
         for index, row in dataset_df.iterrows():
@@ -196,7 +182,7 @@ def create_generator(dataset_df, args):
             image_data = load_normalized_mri(image_path)
             label = row['age']
             features = image_data
-            if with_anat_features:
+            if args.with_anat_features:
                 anat_features = []
                 for anat_column in config.ANATOMICAL_COLUMNS:
                     anat_features.append(row[anat_column])
@@ -220,7 +206,22 @@ def create_tf_dataset(df_path, args, params, training=False):
     '''
     logging.info(f'creating tf.data.Dataset from: {df_path.name}')
     df = pd.read_csv(df_path)
-    generator = create_generator(df, args)
+    
+    transform_model = None 
+    if args.model == 'context_aware' and args.train:
+        paths = get_paths(args)
+        cnn_dir = Path(paths['cnn_model'], 'model')
+        assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
+        cnn = load_model(cnn_dir)
+        cnn_input = cnn.layers[0].input
+        cnn_l10_output = cnn.layers[10].output
+        transform = create_transform_layer(paths)
+        output_after_transform = tf.keras.layers.Lambda(
+            transform)(cnn_l10_output)
+        transform_model = tf.keras.Model(
+            inputs=cnn_input, outputs=output_after_transform)
+    
+    generator = create_generator(df, args, transform_model=transform_model)
     # Disable AutoShard.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
