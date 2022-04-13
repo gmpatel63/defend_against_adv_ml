@@ -8,6 +8,7 @@ import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from collections import namedtuple
 
 from . import config
 from .utils import get_paths
@@ -174,7 +175,7 @@ def load_normalized_mri(image_path):
     return mri_array
 
 
-def create_generator(dataset_df, args, transform_model=None):
+def create_generator(dataset_df, args):
 
     def generator():
         for index, row in dataset_df.iterrows():
@@ -184,15 +185,11 @@ def create_generator(dataset_df, args, transform_model=None):
             features = image_data
             if args.with_anat_features:
                 anat_features = []
+                
                 for anat_column in config.ANATOMICAL_COLUMNS:
                     anat_features.append(row[anat_column])
+                    
                 anat_features = np.array(anat_features)
-
-                if args.model == 'context_aware' and args.train:
-                    image_data = np.expand_dims(image_data, axis=0)
-                    prediction = transform_model.predict(image_data)
-                    image_data = prediction[0]
-
                 features = (image_data, anat_features)
 
             yield features, [label]
@@ -200,6 +197,46 @@ def create_generator(dataset_df, args, transform_model=None):
     return generator
 
 
+def create_context_aware_input(df, args):
+    paths = get_paths(args)
+    cnn_dir = Path(paths['cnn_model'], 'model')
+    assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
+    cnn = load_model(cnn_dir)
+    cnn_input = cnn.layers[0].input
+    cnn_l10_output = cnn.layers[10].output
+    transform = create_transform_layer(paths)
+    output_after_transform = tf.keras.layers.Lambda(
+        transform)(cnn_l10_output)
+    transform_model = tf.keras.Model(
+        inputs=cnn_input, outputs=output_after_transform)
+    
+    Record = namedtuple('Record', 'conv_features anat_features age')
+    context_aware_input = []
+    for index, row in df.iterrows():
+        image_data = load_normalized_mri(row['mri_path'])
+        image_data = np.expand_dims(image_data, axis=0)
+        prediction = transform_model(image_data)
+        anat_features = []
+        for anat_column in config.ANATOMICAL_COLUMNS:
+            anat_features.append(row[anat_column])
+        anat_features = np.array(anat_features)
+        new_record = Record(conv_features=prediction[0], anat_features=anat_features, age=row['age'])
+        context_aware_input.append(new_record)
+    
+    return context_aware_input
+
+
+def create_generator_for_context_aware_model(input_data, args):
+    
+    def generator():
+        for record in input_data:
+            features = (record.conv_features, record.anat_features)
+            label = [record.age]
+            yield features, label
+    
+    return generator
+    
+    
 def create_tf_dataset(df_path, args, params, training=False):
     '''
     create tf.data.DataSet object using from_generator
@@ -207,21 +244,10 @@ def create_tf_dataset(df_path, args, params, training=False):
     logging.info(f'creating tf.data.Dataset from: {df_path.name}')
     df = pd.read_csv(df_path)
     
-    transform_model = None 
+    generator = create_generator(df, args)
     if args.model == 'context_aware' and args.train:
-        paths = get_paths(args)
-        cnn_dir = Path(paths['cnn_model'], 'model')
-        assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
-        cnn = load_model(cnn_dir)
-        cnn_input = cnn.layers[0].input
-        cnn_l10_output = cnn.layers[10].output
-        transform = create_transform_layer(paths)
-        output_after_transform = tf.keras.layers.Lambda(
-            transform)(cnn_l10_output)
-        transform_model = tf.keras.Model(
-            inputs=cnn_input, outputs=output_after_transform)
-    
-    generator = create_generator(df, args, transform_model=transform_model)
+        input_data = create_context_aware_input(df, args)
+        generator = create_generator_for_context_aware_model(input_data, args)
     # Disable AutoShard.
     options = tf.data.Options()
     options.experimental_distribute.auto_shard_policy = tf.data.experimental.AutoShardPolicy.DATA
