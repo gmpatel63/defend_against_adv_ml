@@ -198,6 +198,7 @@ def create_generator(dataset_df, args):
 
 
 def create_context_aware_input(df, args):
+    logging.info('creating dataset for context aware model')
     paths = get_paths(args)
     cnn_dir = Path(paths['cnn_model'], 'model')
     assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
@@ -245,7 +246,7 @@ def create_tf_dataset(df_path, args, params, training=False):
     df = pd.read_csv(df_path)
     
     generator = create_generator(df, args)
-    if args.model == 'context_aware' and args.train:
+    if args.model in ['context_aware', 'enhanced_context_aware'] and args.train:
         input_data = create_context_aware_input(df, args)
         generator = create_generator_for_context_aware_model(input_data, args)
     # Disable AutoShard.
@@ -261,7 +262,7 @@ def create_tf_dataset(df_path, args, params, training=False):
     dataset = tf.data.Dataset.from_generator(
         generator, output_signature=(mri_spec, label_spec))
     if args.with_anat_features:
-        if args.model == 'context_aware' and args.train:
+        if args.model in ['context_aware', 'enhanced_context_aware'] and args.train:
             dataset = tf.data.Dataset.from_generator(
                 generator, output_signature=((cnn_transform_spec, anat_features_spec), label_spec))
         else:
