@@ -9,6 +9,7 @@ import tensorflow as tf
 from tensorflow.keras.models import load_model
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from collections import namedtuple
+from imblearn.over_sampling import RandomOverSampler
 
 from . import config
 from .utils import get_paths
@@ -150,6 +151,14 @@ def create_and_plot_data_csvs(args, params, paths):
 
     train_df, valid_df, test_df = preprocess_anatomical_features(
         train_df, valid_df, test_df)
+    
+    # oversample training dataset
+    if params.oversample == True:
+        logging.info('oversampling training dataset using random over-sampler')
+        oversample = RandomOverSampler(sampling_strategy='not majority')
+        train_df, train_labels = oversample.fit_resample(train_df, train_df['rounded_age'])
+        train_df = train_df.sample(frac=1).reset_index(drop=True)
+    
     plot_dataset(train_df, plots_dir, 'Training Data Distribution')
     plot_dataset(valid_df, plots_dir,
                  'Validation Data Distribution')
@@ -197,7 +206,7 @@ def create_generator(dataset_df, args):
     return generator
 
 
-def create_context_aware_input(df, args):
+def create_context_aware_input(df, args, paths):
     logging.info('creating dataset for context aware model')
     paths = get_paths(args)
     cnn_dir = Path(paths['cnn_model'], 'model')
@@ -213,6 +222,7 @@ def create_context_aware_input(df, args):
     
     Record = namedtuple('Record', 'conv_features anat_features age')
     context_aware_input = []
+    conv_features = []
     for index, row in df.iterrows():
         image_data = load_normalized_mri(row['mri_path'])
         image_data = np.expand_dims(image_data, axis=0)
@@ -221,8 +231,13 @@ def create_context_aware_input(df, args):
         for anat_column in config.ANATOMICAL_COLUMNS:
             anat_features.append(row[anat_column])
         anat_features = np.array(anat_features)
+        conv_features.append(prediction.numpy()[0])
         new_record = Record(conv_features=prediction[0], anat_features=anat_features, age=row['age'])
         context_aware_input.append(new_record)
+    
+    df = pd.DataFrame(conv_features)
+    if paths is not None:
+        df.to_csv(Path(paths['csv_dir'], 'ca_branch1_input.csv'), index=False)
     
     return context_aware_input
 
@@ -238,7 +253,7 @@ def create_generator_for_context_aware_model(input_data, args):
     return generator
     
     
-def create_tf_dataset(df_path, args, params, training=False):
+def create_tf_dataset(df_path, args, params, paths=None, training=False):
     '''
     create tf.data.DataSet object using from_generator
     '''
@@ -247,7 +262,7 @@ def create_tf_dataset(df_path, args, params, training=False):
     
     generator = create_generator(df, args)
     if args.model in ['context_aware', 'enhanced_context_aware'] and args.train:
-        input_data = create_context_aware_input(df, args)
+        input_data = create_context_aware_input(df, args, paths)
         generator = create_generator_for_context_aware_model(input_data, args)
     # Disable AutoShard.
     options = tf.data.Options()

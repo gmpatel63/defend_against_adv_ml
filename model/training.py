@@ -18,7 +18,7 @@ COLUMN_NAMES = ['dataset', 'site_name', 'subject_id', 'age', 'predictions']
 def train_model(args, params, paths):
 
     training_dataset = create_tf_dataset(
-        paths['training_data'], args, params, training=True)
+        paths['training_data'], args, params, paths, training=True)
     validation_dataset = create_tf_dataset(
         paths['validation_data'], args, params)
 
