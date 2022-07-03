@@ -1,3 +1,4 @@
+import logging
 import pickle
 import tensorflow as tf
 from pathlib import Path
@@ -214,12 +215,14 @@ def enhanced_context_aware_model(params):
 
 
 def get_model(args, params, paths):
-    if args.model == 'cnn':
+    if args.model == 'cnn' or args.model == 'srgan_cnn':
         model = cnn_model(params)
     else:
         cnn_dir = Path(paths['cnn_model'], 'model')
+        if args.model == 'srgan_context_aware':
+            cnn_dir = Path(paths['srgan_cnn_model'], 'model') 
         assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
-        if args.model == 'context_aware':
+        if args.model == 'context_aware' or args.model == 'srgan_context_aware':
             model = context_aware_model(params)
         elif args.model == 'unfreezed_context_aware':
             model = unfreezed_context_aware_model(params)
@@ -236,6 +239,7 @@ def load_saved_model(args, paths):
 
     saved_model_dir = Path(model_dir, 'model')
     assert saved_model_dir.exists, f'{args.model} model is not saved at: {saved_model_dir}'
+    logging.info(f'loading {args.model} model from {saved_model_dir}')
     model = load_model(saved_model_dir)
     if args.model in ['context_aware', 'enhanced_context_aware']:
         cnn_dir = Path(paths['cnn_model'], 'model')

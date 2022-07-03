@@ -84,27 +84,27 @@ def preprocess_anatomical_features(train_df, valid_df, test_df):
 
     other_train_feats = train_df.drop(config.ANATOMICAL_COLUMNS, axis=1)
     scaled_train_df = pd.concat([other_train_feats, train_anat_df], axis=1)
-    
+
     validation_anat_features = valid_df[config.ANATOMICAL_COLUMNS].to_numpy()
     test_anat_features = test_df[config.ANATOMICAL_COLUMNS].to_numpy()
 
     scaled_valid_feats = mm_scaler.transform(validation_anat_features)
     scaled_test_feats = mm_scaler.transform(test_anat_features)
-    
+
     scaled_valid_feats = std_scaler.transform(scaled_valid_feats)
     scaled_test_feats = std_scaler.transform(scaled_test_feats)
-    
-    valid_anat_df =pd.DataFrame(
-        scaled_valid_feats, columns=config.ANATOMICAL_COLUMNS) 
-    test_anat_df =pd.DataFrame(
+
+    valid_anat_df = pd.DataFrame(
+        scaled_valid_feats, columns=config.ANATOMICAL_COLUMNS)
+    test_anat_df = pd.DataFrame(
         scaled_test_feats, columns=config.ANATOMICAL_COLUMNS)
-    
+
     other_valid_feats = valid_df.drop(config.ANATOMICAL_COLUMNS, axis=1)
-    other_test_feats = test_df.drop(config.ANATOMICAL_COLUMNS, axis=1) 
-    
+    other_test_feats = test_df.drop(config.ANATOMICAL_COLUMNS, axis=1)
+
     scaled_valid_df = pd.concat([other_valid_feats, valid_anat_df], axis=1)
     scaled_test_df = pd.concat([other_test_feats, test_anat_df], axis=1)
-    
+
     return scaled_train_df, scaled_valid_df, scaled_test_df
 
 
@@ -151,14 +151,15 @@ def create_and_plot_data_csvs(args, params, paths):
 
     train_df, valid_df, test_df = preprocess_anatomical_features(
         train_df, valid_df, test_df)
-    
+
     # oversample training dataset
     if params.oversample == True:
         logging.info('oversampling training dataset using random over-sampler')
         oversample = RandomOverSampler(sampling_strategy='not majority')
-        train_df, train_labels = oversample.fit_resample(train_df, train_df['rounded_age'])
+        train_df, train_labels = oversample.fit_resample(
+            train_df, train_df['rounded_age'])
         train_df = train_df.sample(frac=1).reset_index(drop=True)
-    
+
     plot_dataset(train_df, plots_dir, 'Training Data Distribution')
     plot_dataset(valid_df, plots_dir,
                  'Validation Data Distribution')
@@ -180,7 +181,8 @@ def load_normalized_mri(image_path):
     'read nifti image using nibabel and convert it into numpu array'
     mri = nib.load(image_path)
     mri_array = mri.get_fdata()
-    mri_array = np.expand_dims(mri_array, axis=3)
+    if mri_array.shape != config.MRI_SHAPE:
+        mri_array = np.expand_dims(mri_array, axis=3)
     return mri_array
 
 
@@ -194,10 +196,10 @@ def create_generator(dataset_df, args):
             features = image_data
             if args.with_anat_features:
                 anat_features = []
-                
+
                 for anat_column in config.ANATOMICAL_COLUMNS:
                     anat_features.append(row[anat_column])
-                    
+
                 anat_features = np.array(anat_features)
                 features = (image_data, anat_features)
 
@@ -210,6 +212,8 @@ def create_context_aware_input(df, args, paths):
     logging.info('creating dataset for context aware model')
     paths = get_paths(args)
     cnn_dir = Path(paths['cnn_model'], 'model')
+    if args.model == 'srgan_context_aware':
+        cnn_dir = Path(paths['srgan_cnn_model'], 'model')
     assert cnn_dir.exists(), 'cnn model must be trained before training context aware model'
     cnn = load_model(cnn_dir)
     cnn_input = cnn.layers[0].input
@@ -219,12 +223,13 @@ def create_context_aware_input(df, args, paths):
         transform)(cnn_l10_output)
     transform_model = tf.keras.Model(
         inputs=cnn_input, outputs=output_after_transform)
-    
+
     Record = namedtuple('Record', 'conv_features anat_features age')
     context_aware_input = []
     conv_features = []
     for index, row in df.iterrows():
-        image_data = load_normalized_mri(row['mri_path'])
+        mri_path = row['mri_path']
+        image_data = load_normalized_mri(mri_path)
         image_data = np.expand_dims(image_data, axis=0)
         prediction = transform_model(image_data)
         anat_features = []
@@ -232,34 +237,50 @@ def create_context_aware_input(df, args, paths):
             anat_features.append(row[anat_column])
         anat_features = np.array(anat_features)
         conv_features.append(prediction.numpy()[0])
-        new_record = Record(conv_features=prediction[0], anat_features=anat_features, age=row['age'])
+        new_record = Record(
+            conv_features=prediction[0], anat_features=anat_features, age=row['age'])
         context_aware_input.append(new_record)
-    
+
     df = pd.DataFrame(conv_features)
     if paths is not None:
         df.to_csv(Path(paths['csv_dir'], 'ca_branch1_input.csv'), index=False)
-    
+
     return context_aware_input
 
 
 def create_generator_for_context_aware_model(input_data, args):
-    
+
     def generator():
         for record in input_data:
             features = (record.conv_features, record.anat_features)
             label = [record.age]
             yield features, label
-    
+
     return generator
-    
-    
+
+
+def get_dataframe(df_path, args, attack=False):
+
+    df = pd.read_csv(df_path)
+    if args.model in ['srgan_cnn', 'srgan_context_aware']:
+        experiment_name = Path(args.experiment_dir).name
+        new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/{experiment_name}'
+        if attack:
+            new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/{args.attack}'
+        logging.info(f'changing input path, replace {config.DATA_DIR} with {new_path_str}')
+        df['mri_path'] = df['mri_path'].str.replace(
+            config.DATA_DIR, new_path_str)
+
+    return df
+
+
 def create_tf_dataset(df_path, args, params, paths=None, training=False):
     '''
     create tf.data.DataSet object using from_generator
     '''
     logging.info(f'creating tf.data.Dataset from: {df_path.name}')
-    df = pd.read_csv(df_path)
-    
+    df = get_dataframe(df_path, args)
+
     generator = create_generator(df, args)
     if args.model in ['context_aware', 'enhanced_context_aware'] and args.train:
         input_data = create_context_aware_input(df, args, paths)

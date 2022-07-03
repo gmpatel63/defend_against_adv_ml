@@ -108,7 +108,7 @@ def evaluate_model(args, params, paths):
         
         # get output of flatten layer of cnn and find a normer and scaler for that output
         # that output is being used in context aware model
-        if args.model == 'cnn':
+        if args.model in ['cnn', 'srgan_cnn']:
             model = load_saved_model(args, paths)
             cnn_input_layer = model.layers[0].input
             cnn_layer_10 = model.layers[10].output

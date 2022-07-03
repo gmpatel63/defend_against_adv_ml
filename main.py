@@ -4,7 +4,7 @@ from pathlib import Path
 from model.utils import Params, parse_args, get_paths, set_logger
 from model.datasets import create_and_plot_data_csvs
 from model.training import train_model, evaluate_model
-from model.attacks import gsm_attack, l0_attack
+from model.attacks import create_adv_inputs_gsm, gsm_attack, l0_attack
 from model.models import load_saved_model
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '2'
@@ -36,10 +36,25 @@ def main():
         evaluate_model(args, params, paths)
 
     model = load_saved_model(args, paths)
-    if args.attack == 'gsm':
-        gsm_attack(args, params, paths, model)
-    elif args.attack == 'l0':
-        l0_attack(args, params, paths, model)
+    if args.model in ['srgan_cnn', 'srgan_context_aware']:
+        if args.create_adv_input is True:
+            if args.attack == 'gsm':
+                create_adv_inputs_gsm(args, params, paths, model)
+            elif args.attack == 'l0':
+                # create adv inputs l0
+                pass
+        elif args.evaluate_adv_input is True:
+            if args.attack == 'gsm':
+                # evaluate_adv_inputs_gsm(args, params, paths, model)
+                pass
+            elif args.attack == 'l0':
+                # evaluate adv inputs l0
+                pass   
+    else:
+        if args.attack == 'gsm':
+            gsm_attack(args, params, paths, model)
+        elif args.attack == 'l0':
+            l0_attack(args, params, paths, model)
 
 
 if __name__ == '__main__':

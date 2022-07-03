@@ -63,11 +63,11 @@ def main():
     test_data_path = Path(csv_dir, 'test_data.csv')
 
     training_df = pd.read_csv(training_data_path)
-    validation_df = pd.read_csv(validation_data_path).drop_duplicates()
-    test_df = pd.read_csv(test_data_path).drop_duplicates()
+    validation_df = pd.read_csv(validation_data_path)
+    test_df = pd.read_csv(test_data_path)
 
     # srgan data dirs
-    srgan_data_dir = Path(args.work_dir, config.SRGAN_DATA)
+    srgan_data_dir = Path(args.work_dir, config.SRGAN_INPUT_DATA, 'legitimate_input')
     srgan_data_dir.mkdir(parents=True, exist_ok=True)
 
     create_srgan_dataset(training_df, srgan_data_dir, training_data_path)
