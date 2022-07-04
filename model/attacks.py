@@ -4,6 +4,7 @@ import pandas as pd
 import tensorflow as tf
 from pathlib import Path
 import subprocess
+import nibabel as nib
 
 from . import config
 from .datasets import load_normalized_mri, get_dataframe
@@ -24,7 +25,7 @@ def get_anatomical_features(subj_record):
 def gsm_attack(args, params, paths, model):
     logging.info(f'Starting gsm attack for {args.model}')
     
-    test_df = get_dataframe(paths['test_data'], args, attack=True)
+    test_df = get_dataframe(paths['test_data'], args)
     EPS_VALUES = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005]
     column_names = COLUMN_NAMES + ['predictions'] + EPS_VALUES
     logging.info(column_names)
@@ -88,7 +89,7 @@ def gsm_attack(args, params, paths, model):
 def l0_attack(args, params, paths, model, direction='max'):
 
     logging.info(f'Starting l0 attack')
-    test_df = get_dataframe(paths['test_data'], args, attack=True)
+    test_df = get_dataframe(paths['test_data'], args)
     
     INTERVAL = 10  # 100
     NUMBERS_INTERVAL = 5  # 40
@@ -187,13 +188,13 @@ def l0_attack(args, params, paths, model, direction='max'):
 
 
 def create_adv_inputs_gsm(args, params, paths, model):
-    logging.info(f'Starting gsm attack for {args.model}')
+    logging.info(f'Creating adversarial inputs for {args.model} using {args.attack} attack')
 
-    test_df = get_dataframe(paths['test_data'], args, attack=True)
+    test_df = get_dataframe(paths['test_data'], args)
     EPS_VALUES = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005]
     EPS_COLUMNS = [
-        f'{args.attack}_{str(eps_value)}_sub_name' for eps_value in EPS_VALUES]
-    column_names = COLUMN_NAMES + EPS_COLUMNS
+        f'{args.attack}_{str(eps_value)}' for eps_value in EPS_VALUES]
+    # column_names = COLUMN_NAMES + EPS_COLUMNS
     
     results = []
     experiment_dir = Path(args.experiment_dir)
@@ -201,9 +202,9 @@ def create_adv_inputs_gsm(args, params, paths, model):
 
     for index, sample in test_df.iterrows():
 
-        result = []
-        for column_name in COLUMN_NAMES:
-            result.append(sample[column_name])
+        # result = []
+        # for column_name in COLUMN_NAMES:
+        #     result.append(sample[column_name])
 
         mri = load_normalized_mri(sample.mri_path)
         mri_filename = Path(sample.mri_path).name.partition('.')[0]
@@ -223,7 +224,6 @@ def create_adv_inputs_gsm(args, params, paths, model):
         with tf.GradientTape() as tape:
             tape.watch(input_tensor)
             pred = model(input_tensor)
-            result.append(pred.numpy()[0][0])
 
         grad = tape.gradient(pred, input_tensor)
         if args.with_anat_features:
@@ -232,28 +232,31 @@ def create_adv_inputs_gsm(args, params, paths, model):
         for eps_rate, eps_column_name in zip(EPS_VALUES, EPS_COLUMNS):
             eps = eps_rate * (max_value - min_value)
             perturbation = np.sign(grad) * eps
-            # range check - verify it better.
+            
             adv_mri = mri_tensor + perturbation
             adv_mri = tf.where(adv_mri > max_value, max_value, adv_mri)
             adv_mri = tf.where(adv_mri < min_value, min_value, adv_mri)
-
+            
+            
             subject_name = f'{sample.dataset}_{mri_filename}'
             adv_mri_dir = Path(args.work_dir, config.SRGAN_INPUT_DATA,
-                               experiment_name, eps_column_name, sample.dataset, subject_name)
+                               'adversarial_input', experiment_name, args.model, eps_column_name, subject_name)
             adv_mri_dir.mkdir(parents=True, exist_ok=True)
             mri_file = Path(
                 adv_mri_dir, 'T1_brain_extractedBrainExtractionBrain.nii.gz')
-
-            adv_image = nib.Nifti1Image(adv_mri[0], affine=np.eye(4))
+            
+            adv_mri = adv_mri.numpy()
+            adv_mri = np.squeeze(adv_mri)
+            adv_image = nib.Nifti1Image(adv_mri, affine=np.eye(4))
             adv_image.to_filename(mri_file)
             mri_mask_path = Path(
                 adv_mri_dir, 'T1_brain_extractedBrainExtractionMask.nii.gz')
             subprocess.run(['fslmaths', mri_file, '-bin', mri_mask_path])
-            result.append(subject_name)
+            # result.append(subject_name)
             logging.info(f'created adversarial mri at {adv_mri_dir}')
 
-        results.append(result)
+        # results.append(result)
 
-    results_df = pd.DataFrame(results, columns=column_names)
-    model_dir = Path(args.experiment_dir, f'{args.model}_model')
-    df_path = Path(model_dir, f'{args.attack}_paths.csv')
+    # results_df = pd.DataFrame(results, columns=column_names)
+    # model_dir = Path(args.experiment_dir, paths['csv_dir'])
+    # df_path = Path(model_dir, f'{args.attack}_paths.csv')

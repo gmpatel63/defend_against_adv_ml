@@ -51,9 +51,6 @@ def create_srgan_dataset(df, srgan_data_dir, df_path):
 
 def main():
     
-    # we only need to run srgan preprocessing for datasets of a single experiment 
-    # because all experiments will have same input files
-    # e.g running 
     args = parse_args()
     data_dir = Path(args.work_dir, config.DATA_DIR)
 
