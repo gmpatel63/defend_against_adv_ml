@@ -262,14 +262,15 @@ def create_generator_for_context_aware_model(input_data, args):
 def get_dataframe(df_path, args, adversarial_input=False, eps=None):
 
     df = pd.read_csv(df_path)
-    if args.model in ['srgan_cnn', 'srgan_context_aware'] and (args.evaluate or adversarial_input):
+    if args.model in ['srgan_cnn', 'srgan_context_aware'] and (args.train or args.evaluate or adversarial_input):
         experiment_name = Path(args.experiment_dir).name
-        if args.evaluate:
-            new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/legitimate_input/'
+        if args.evaluate or args.train:
+            new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/legitimate_input'
         if adversarial_input:
             assert eps is not None
-            new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/adversarial_input/{args.attack}_{eps}'
-        logging.info(f'changing input path, replace {config.DATA_DIR} with {new_path_str}')
+            new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/adversarial_input/{args.model}/{args.attack}_{eps}'
+        logging.info(
+            f'changing input path, replace {config.DATA_DIR} with {new_path_str}')
         df['mri_path'] = df['mri_path'].str.replace(
             config.DATA_DIR, new_path_str)
 

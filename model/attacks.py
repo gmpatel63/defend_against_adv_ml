@@ -260,3 +260,9 @@ def create_adv_inputs_gsm(args, params, paths, model):
     # results_df = pd.DataFrame(results, columns=column_names)
     # model_dir = Path(args.experiment_dir, paths['csv_dir'])
     # df_path = Path(model_dir, f'{args.attack}_paths.csv')
+
+    
+def evaluate_adv_inputs_gsm(args, params, paths, model):
+    logging.info(f'Creating adversarial inputs for {args.model} using {args.attack} attack')
+    return
+    
