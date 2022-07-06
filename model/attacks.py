@@ -11,6 +11,8 @@ from .datasets import load_normalized_mri, get_dataframe
 from .plots import plot_categorical_deviation, plot_comparison
 
 COLUMN_NAMES = ['dataset', 'site_name', 'subject_id', 'age']
+# keep EPS_VALUES constant during an experiment
+EPS_VALUES = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005]
 
 def get_anatomical_features(subj_record):
     anat_features = []
@@ -191,7 +193,7 @@ def create_adv_inputs_gsm(args, params, paths, model):
     logging.info(f'Creating adversarial inputs for {args.model} using {args.attack} attack')
 
     test_df = get_dataframe(paths['test_data'], args)
-    EPS_VALUES = [0.0001, 0.0002, 0.0005, 0.001, 0.002, 0.005]
+    
     EPS_COLUMNS = [
         f'{args.attack}_{str(eps_value)}' for eps_value in EPS_VALUES]
     # column_names = COLUMN_NAMES + EPS_COLUMNS
@@ -263,6 +265,54 @@ def create_adv_inputs_gsm(args, params, paths, model):
 
     
 def evaluate_adv_inputs_gsm(args, params, paths, model):
-    logging.info(f'Creating adversarial inputs for {args.model} using {args.attack} attack')
-    return
+    logging.info(f'Evaluating adversarial inputs for {args.model} using {args.attack} attack')
     
+    test_df = pd.read_csv(paths['test_data'])
+    experiment_name = Path(args.experiment_dir).name
+    new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/legitimate_input'
+    test_df['mri_path'] = test_df['mri_path'].str.replace(config.DATA_DIR, new_path_str)
+    results_df = test_df[COLUMN_NAMES].copy()
+    
+    # predict on legitimate input
+    predictions = []
+    for index, sample in test_df.iterrows():
+        mri = load_normalized_mri(sample.mri_path)
+        mri = np.expand_dims(mri, axis=0)
+        if args.with_anat_features:
+            anat_features = get_anatomical_features(sample)
+        mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
+        if args.with_anat_features:
+            input_tensor = [(mri_tensor, anat_features)]
+        else:
+            input_tensor = mri_tensor
+            
+        prediction = model.predict(input_tensor)[0][0]
+        predictions.append(prediction)
+    results_df['predictions'] = predictions
+     
+    for eps_value in EPS_VALUES:
+        df = get_dataframe(paths['test_data'], args, adversarial_input=True, eps=eps_value)
+        current_predictions = []
+        for index, sample in df.iterrows():
+            mri = load_normalized_mri(sample.mri_path)
+            mri = np.expand_dims(mri, axis=0)
+            if args.with_anat_features:
+                anat_features = get_anatomical_features(sample)
+            mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
+            if args.with_anat_features:
+                input_tensor = [(mri_tensor, anat_features)]
+            else:
+                input_tensor = mri_tensor
+            
+            prediction = model.predict(input_tensor)[0][0]
+            current_predictions.append(prediction)
+        
+        results_df[eps_value] = predictions
+        
+    # results_df = pd.DataFrame(results, columns=column_names)
+    model_dir = Path(args.experiment_dir, f'{args.model}_model')
+    df_path = Path(model_dir, f'{args.attack}.csv')
+    results_df.to_csv(df_path, index=False)
+    plot_categorical_deviation(
+        args, results_df, EPS_VALUES, paths['plots_dir'])
+    plot_comparison(args, EPS_VALUES, paths['plots_dir']) 
