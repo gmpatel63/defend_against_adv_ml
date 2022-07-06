@@ -307,7 +307,7 @@ def evaluate_adv_inputs_gsm(args, params, paths, model):
             prediction = model.predict(input_tensor)[0][0]
             current_predictions.append(prediction)
         
-        results_df[eps_value] = predictions
+        results_df[eps_value] = current_predictions 
         
     # results_df = pd.DataFrame(results, columns=column_names)
     model_dir = Path(args.experiment_dir, f'{args.model}_model')
@@ -315,4 +315,5 @@ def evaluate_adv_inputs_gsm(args, params, paths, model):
     results_df.to_csv(df_path, index=False)
     plot_categorical_deviation(
         args, results_df, EPS_VALUES, paths['plots_dir'])
-    plot_comparison(args, EPS_VALUES, paths['plots_dir']) 
+    plot_comparison(args, EPS_VALUES, paths['plots_dir'])
+
