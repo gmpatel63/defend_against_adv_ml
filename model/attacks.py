@@ -209,6 +209,13 @@ def create_adv_inputs_gsm(args, params, paths, model):
         #     result.append(sample[column_name])
 
         mri = load_normalized_mri(sample.mri_path)
+        
+        # load srgan gradient
+        srgan_grad_fname = sample.mri_path.replace('nii.gz', '_grad.nii.gz')
+        srgan_grad = load_normalized_mri(srgan_grad_fname)
+        srgan_grad = np.expand_dims(mri, axis=0)
+        srgan_grad = tf.convert_to_tensor(srgan_grad, dtype=tf.float32)
+
         mri_filename = Path(sample.mri_path).name.partition('.')[0]
         if args.with_anat_features:
             anat_features = get_anatomical_features(sample)
@@ -233,7 +240,7 @@ def create_adv_inputs_gsm(args, params, paths, model):
 
         for eps_rate, eps_column_name in zip(EPS_VALUES, EPS_COLUMNS):
             eps = eps_rate * (max_value - min_value)
-            perturbation = np.sign(grad) * eps
+            perturbation = np.sign(tf.math.multiply(grad, srgan_grad)) * eps
             
             adv_mri = mri_tensor + perturbation
             adv_mri = tf.where(adv_mri > max_value, max_value, adv_mri)
