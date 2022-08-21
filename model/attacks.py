@@ -419,19 +419,20 @@ def create_adv_inputs_l0(args, params, paths, model, direction='max'):
             cnt_failure = cnt_failure + 1 if not flag_better else 0
             
             subject_name = f'{sample.dataset}_{mri_filename}'
+            print(f'cnt: {cnt}, flag_better: {flag_better}')
             
             if cnt % INTERVAL == 0 and flag_better:
-                
-                eps_column_name = attack_columns[i]
-                i =+ 1
+
+                attack_dir_name = f'{args.attack}_{attack_columns[i]}'
+                i += 1
                 adv_mri_dir = Path(args.work_dir, config.SRGAN_INPUT_DATA,
-                                'adversarial_input', experiment_name, args.model, eps_column_name, subject_name)
+                                'adversarial_input', experiment_name, args.model, attack_dir_name, subject_name)
                 adv_mri_dir.mkdir(parents=True, exist_ok=True)
                 mri_file = Path(
                     adv_mri_dir, 'T1_brain_extractedBrainExtractionBrain.nii.gz')
-                adv_mri = adv_mri.numpy()
-                adv_mri = np.squeeze(adv_mri)
-                adv_image = nib.Nifti1Image(adv_mri, affine=np.eye(4))
+                # adv_mri = adv_mri.numpy()
+                adv_mri_save = np.squeeze(adv_mri)
+                adv_image = nib.Nifti1Image(adv_mri_save, affine=np.eye(4))
                 adv_image.to_filename(mri_file)
                 mri_mask_path = Path(
                     adv_mri_dir, 'T1_brain_extractedBrainExtractionMask.nii.gz')
@@ -439,21 +440,22 @@ def create_adv_inputs_l0(args, params, paths, model, direction='max'):
                 
             if cnt_failure >= 20:
                 
-                for i in range(i, len(attack_columns)):
-                    eps_column_name = attack_columns[i]
+                while(i < len(attack_columns)):
+                    attack_dir_name = f'{args.attack}_{attack_columns[i]}'
+                    i += 1
                     adv_mri_dir = Path(args.work_dir, config.SRGAN_INPUT_DATA,
-                                    'adversarial_input', experiment_name, args.model, eps_column_name, subject_name)
+                                    'adversarial_input', experiment_name, args.model, attack_dir_name, subject_name)
                     adv_mri_dir.mkdir(parents=True, exist_ok=True)
                     mri_file = Path(
                         adv_mri_dir, 'T1_brain_extractedBrainExtractionBrain.nii.gz')
-                    adv_mri = adv_mri.numpy()
-                    adv_mri = np.squeeze(adv_mri)
-                    adv_image = nib.Nifti1Image(adv_mri, affine=np.eye(4))
+                    # adv_mri = adv_mri.numpy()
+                    adv_mri_save = np.squeeze(adv_mri)
+                    adv_image = nib.Nifti1Image(adv_mri_save, affine=np.eye(4))
                     adv_image.to_filename(mri_file)
                     mri_mask_path = Path(
                         adv_mri_dir, 'T1_brain_extractedBrainExtractionMask.nii.gz')
                     subprocess.run(['fslmaths', mri_file, '-bin', mri_mask_path])
-                     
+                
                 break
             if cnt // INTERVAL >= NUMBERS_INTERVAL:
                 # save one example before exit
