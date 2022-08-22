@@ -467,7 +467,54 @@ def create_adv_inputs_l0(args, params, paths, model, direction='max'):
 
 
 def evaluate_adv_inputs_l0(args, params, paths, model):
-    results_df = pd.DataFrame(results, columns=column_names)
+    logging.info(f'Evaluating adversarial inputs for {args.model} using {args.attack} attack')
+    test_df = pd.read_csv(paths['test_data'])
+    experiment_name = Path(args.experiment_dir).name
+    new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/legitimate_input'
+    test_df['mri_path'] = test_df['mri_path'].str.replace(config.DATA_DIR, new_path_str)
+    results_df = test_df[COLUMN_NAMES].copy()
+    
+    # predict on legitimate input
+    predictions = []
+    for index, sample in test_df.iterrows():
+        mri = load_normalized_mri(sample.mri_path)
+        mri = np.expand_dims(mri, axis=0)
+        if args.with_anat_features:
+            anat_features = get_anatomical_features(sample)
+        mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
+        if args.with_anat_features:
+            input_tensor = [(mri_tensor, anat_features)]
+        else:
+            input_tensor = mri_tensor
+            
+        prediction = model.predict(input_tensor)[0][0]
+        predictions.append(prediction)
+    results_df['predictions'] = predictions
+    
+    INTERVAL = 10  # 100
+    NUMBERS_INTERVAL = 5  # 40 
+    attack_columns = [
+        f'{i*NUMBERS_INTERVAL}' for i in range(1, NUMBERS_INTERVAL + 1)]
+    for eps_value in attack_columns:
+        df = get_dataframe(paths['test_data'], args, adversarial_input=True, eps=eps_value)
+        current_predictions = []
+        for index, sample in df.iterrows():
+            mri = load_normalized_mri(sample.mri_path)
+            mri = np.expand_dims(mri, axis=0)
+            if args.with_anat_features:
+                anat_features = get_anatomical_features(sample)
+            mri_tensor = tf.convert_to_tensor(mri, dtype=tf.float32)
+            if args.with_anat_features:
+                input_tensor = [(mri_tensor, anat_features)]
+            else:
+                input_tensor = mri_tensor
+            
+            prediction = model.predict(input_tensor)[0][0]
+            current_predictions.append(prediction)
+        
+        results_df[eps_value] = current_predictions 
+        
+    # results_df = pd.DataFrame(results, columns=column_names)
     model_dir = Path(args.experiment_dir, f'{args.model}_model')
     df_path = Path(model_dir, f'{args.attack}.csv')
     results_df.to_csv(df_path, index=False)

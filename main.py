@@ -45,10 +45,8 @@ def main():
         elif args.evaluate_adv_input is True:
             if args.attack == 'gsm':
                 evaluate_adv_inputs_gsm(args, params, paths, model)
-                pass
             elif args.attack == 'l0':
-                # evaluate adv inputs l0
-                pass   
+                evaluate_adv_inputs_l0(args, params, paths, model)
     else:
         if args.attack == 'gsm':
             gsm_attack(args, params, paths, model)
