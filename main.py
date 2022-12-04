@@ -4,7 +4,7 @@ from pathlib import Path
 from model.utils import Params, parse_args, get_paths, set_logger
 from model.datasets import create_and_plot_data_csvs
 from model.training import train_model, evaluate_model
-from model.attacks import gsm_attack, l0_attack, create_adv_inputs_gsm, evaluate_adv_inputs_gsm, create_adv_inputs_l0
+from model.attacks import gsm_attack, l0_attack, create_adv_inputs_gsm, evaluate_adv_inputs_gsm, create_adv_inputs_l0, evaluate_adv_inputs_l0
 from model.models import load_saved_model
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '2'

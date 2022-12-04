@@ -7,5 +7,6 @@
   "num_epochs": 65,
   "age_min": 8,
   "age_max": 30,
-  "age_max_sample_cnt": 100
+  "age_max_sample_cnt": 100,
+  "oversample": false
 }

@@ -23,6 +23,9 @@ def plot_dataset(df, output_dir, plot_title):
 
     sorted_df = df.sort_values(ROUNDED_AGE_CLMN)
     count = sorted_df[ROUNDED_AGE_CLMN].value_counts()
+    plt.rc('font', size=10)
+    plt.figure(figsize=(10, 10))
+    plt.xticks(rotation=45)
     plot = sns.barplot(x=count.index, y=count.values)
     # training_data_plot.set(xticklabels=[])
     # training_data_plot.set(xlabel=None)
