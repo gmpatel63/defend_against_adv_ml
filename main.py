@@ -6,6 +6,7 @@ from model.datasets import create_and_plot_data_csvs
 from model.training import train_model, evaluate_model
 from model.attacks import gsm_attack, l0_attack, create_adv_inputs_gsm, evaluate_adv_inputs_gsm, create_adv_inputs_l0, evaluate_adv_inputs_l0
 from model.models import load_saved_model
+from model.red_attack import RedAttack
 
 os.environ['TF_CPP_MIN_VLOG_LEVEL'] = '2'
 
@@ -53,6 +54,9 @@ def main():
         elif args.attack == 'l0':
             l0_attack(args, params, paths, model)
 
+    if args.attack == 'red_attack':
+        attack_obj = RedAttack(args, paths, model)
+        attack_obj.attack()
 
 if __name__ == '__main__':
     main()
