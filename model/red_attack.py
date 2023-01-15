@@ -8,7 +8,7 @@ import copy
 from pathlib import Path
 
 from . import config
-from .datasets import load_normalized_mri
+from .datasets import load_normalized_mri, get_dataframe
 from .attacks import get_anatomical_features
 
 # #max_diff function returns the max pixel value of the difference of two image
@@ -168,7 +168,7 @@ class RedAttack(object):
         self.theta = 0.196
         self.jump_size = 1.0
         self.dmin = 1.0
-        self.df = pd.read_csv(paths['test_data'])
+        self.df = get_dataframe(paths['test_data'], args)
         self.model = model
         self.model_name = args.model
         self.args = args
@@ -178,7 +178,7 @@ class RedAttack(object):
 
     def get_target_dict(self):
         # find out mri with max age prediction - that will be our target        
-        if(self.model_name in ['cnn', 'context_aware']):
+        if(self.model_name in ['cnn', 'context_aware', 'srgan_cnn']):
             max_pred = 0
             target_anat_features = []
             target_mri = None

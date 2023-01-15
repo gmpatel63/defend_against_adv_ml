@@ -265,9 +265,9 @@ def create_generator_for_context_aware_model(input_data, args):
 def get_dataframe(df_path, args, adversarial_input=False, eps=None):
 
     df = pd.read_csv(df_path)
-    if args.model in ['srgan_cnn', 'srgan_context_aware'] and (args.train or args.evaluate or adversarial_input):
+    if args.model in ['srgan_cnn', 'srgan_context_aware'] and (args.train or args.evaluate or adversarial_input or args.attack=='red_attack'):
         experiment_name = Path(args.experiment_dir).name
-        if args.evaluate or args.train:
+        if args.evaluate or args.train or args.attack=='red_attack':
             new_path_str = f'{config.SRGAN_OUTPUT_DATA}/{experiment_name}/evaluate/legitimate_input'
         if adversarial_input:
             assert eps is not None
