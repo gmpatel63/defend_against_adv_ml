@@ -182,10 +182,10 @@ class RedAttack(object):
             max_pred = 0
             target_anat_features = []
             target_mri = None
-            anat_features = None
             for index, sample in self.df.iterrows():
                 mri = load_normalized_mri(sample.mri_path)
                 mri = np.expand_dims(mri, axis=0)
+                anat_features = []
                 if self.args.with_anat_features:
                     anat_features = get_anatomical_features(sample)
                     input_tensor = [(mri, anat_features)]
@@ -209,7 +209,7 @@ class RedAttack(object):
 
         mri = mriObj.mri
         mri = np.expand_dims(mri, axis=0)
-        if tf.experimental.numpy.any(mriObj.anat_features):
+        if mriObj.anat_features is not None and  tf.experimental.numpy.any(mriObj.anat_features):
             input_tensor = [(mri, mriObj.anat_features)]
         else:
             input_tensor = mri
@@ -241,12 +241,10 @@ class RedAttack(object):
             be_iterations, diff_src, final_pred = self.iteration(sourceMRI)
             
             iters_results.append({'source age': source_pred, 'output age': final_pred, 'iterations': be_iterations, 'distance': diff_src})
-            if index == 2:
-                break
             
         print(f'iters_results: {iters_results}')
         df = pd.DataFrame(iters_results)
-        df_name = f'{self.args.attack}_{self.args.model_name}'
+        df_name = f'{self.args.attack}_{self.args.model}'
         df_path = Path(self.output_dir, df_name)
         df.to_csv(df_path, index=False)
         
@@ -396,7 +394,7 @@ class RedAttack(object):
             it = it + 1
             d1 = np.sum(np.square(inewMRI.mri - sourceMRI.mri))     
             #if after 100 iteration we didn't reach then may be we are going in wrong direction so we are breaking
-            if(it > 100):
+            if(it > 5):
                 break
             
         if (d1 > d2):
