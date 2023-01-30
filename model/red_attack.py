@@ -6,153 +6,13 @@ import time
 import logging
 import copy
 from pathlib import Path
+import requests
+import base64
+import json
 
 from . import config
 from .datasets import load_normalized_mri, get_dataframe
 from .attacks import get_anatomical_features
-
-# #max_diff function returns the max pixel value of the difference of two image
-# def max_diff(img1,img2):
-#     img = img1 - img2
-#     return np.amax(img)
-  
-# #moves the source image to the boundary of the target image
-# def boundary_estimation(source, target, dmin, pred_func):
-#     # print("entering boundary_estimation")
-#     Ii = ((source + target)/2.0)
-#     k = pred_func(Ii)
-#     delta = max_diff(source, Ii)
-#     Ia2 = source
-#     Ib2 = target
-#     p = Ib2
-#     #doing while the value of delta is greater than the dmin
-#     loop_count = 0
-#     while (delta > dmin):
-#         if (pred_func(Ib2) != k):
-#             Ia2 = Ii
-#         else:
-#             Ib2 = Ii
-#         Ii = ((Ia2+Ib2)/2.0)
-#         k = pred_func(Ii)
-#         delta = max_diff(Ia2,Ii)
-#         loop_count += 1
-#         # print(f"prediction for Ii: {pred_func(Ii)}")
-#     # print(f"iterations for boundary estimation: {loop_count}")
-#     return Ii
-  
-# #go_out function moves the image again inside the target class if in between optimisation the image comes out
-# def go_out(iout, alpha, target, pred_func):
-#     i_diff = target - iout
-#     inew = iout
-# #moving the image in the direction of target image until it's class becomes same as that of target image
-#     while (pred_func(inew)!=pred_func(target)):
-#         inew = inew + 0.1*(i_diff)  
-#     return inew
-
-
-# #array_diff function calculates the square of the sum each given pixel value in 30x30 image
-# def array_diff(d1):
-#     sumd1 = 0.0
-#     for l in range(1):
-#         for i in range(0,156):
-#             for j in range(0,220):
-#                 for k in range(0,172):
-#                     d1[k][j][i][l] = d1[k][j][i][l]*d1[k][j][i][l]
-#                     sumd1 = sumd1 + d1[k][j][i][l]
-#     return (sumd1)
-
-# #gradient estimation function finds the sign in which the adversarial image should move so as to
-# #reduce it's distance from the source image
-# def gradient_estimation(source, target, adversarial, n, theta, pred_func):
-#     # print("\n\n-------entering gradient estimation---------")
-#     Ia = source
-#     Ib = target
-#     Ii = copy.deepcopy(adversarial)
-#     max_val = np.max(source)
-
-#     Io = np.zeros((5903040))
-#     #generating n random random integers between 0 and 2700 to set those pixel value as 255 so as 
-#     #to generate a new random image
-#     X = np.random.randint(0,5903040, size=n)
-#     for i in X:
-#         # max_val = max value of mri 
-#         Io[i] = max_val
-#     Io = Io.reshape((172, 220, 156, 1))
-#     #using newly generated random image to create an image near to the adversarial image
-#     Ii2 = Ii + theta*Io
-
-#     diff2 = Ii2 - Ia
-#     diff1 = Ii - Ia
-#     #finding the distance of the source image from the images the adversarial one and the new one generated from it
-#     d2 = array_diff(diff2)
-#     d1 = array_diff(diff1)
-#     print("-------exiting gradient estimation---------\n\n")
-#     #if the new one has large distance then move in it's opposite direction else move in the direction of adversarial image
-#     if (d2 > d1):
-#         return (-1, Ii2)
-#     elif (d1 > d2):
-#         return (1, Ii2)
-#     else:
-#         return (0,Ii2)
-      
-# #efficient update function finally moves the adversarial image in the direction given by gradient estimation function
-# def efficient_update(source, target, adversarial, I2, g, j, pred_func):
-#     print("\n\n-------entering efficient update---------")
-#     Ia = source 
-#     Ib = target
-#     Ii = adversarial
-#     Ii2 = I2
-#     # delta is the vector with direction to move
-#     delta = g*(Ii2 - Ii)
-#     l = j
-#     #adding delta to the given adversarial image with a jump size
-#     Inew = Ii + l*delta
-#     print(f"prediction for fresh Inew: {pred_func(Inew)}")
-#     diff1 = Inew - Ia
-#     diff2 = Ii - Ia
-#     #calculating the distance after every movement from each image to source image so we know that we are moving right
-#     d1 = array_diff(diff1)
-#     d2 = array_diff(diff2)
-#     ii = 0
-#     it = 0
-#     # we are moving the image till the Inew is optimzed even little
-#     while(d1 > d2):
-#         # reducing the count of jump after every move so that we don't go much far
-#         l = (l/2.0)
-#         Inew = Ii + l*delta
-#         if(pred_func(Inew)!=pred_func(target)):
-#             Inew = go_out(Inew,0.01,target)
-#         it = it + 1
-#         d1 = array_diff(Inew-Ia)        
-#         #if after 100 iteration we didn't reach then may be we are going in wrong direction so we are breaking
-#         if(it>100):
-#             break
-          
-          
-#     if (d1 > d2):
-#         print(ii)
-#         ii = ii + 1
-#         Inew = Ii
-
-#     return Inew
-  
- 
-
-  
-         
-# def red_attack(args, params, paths, model):
-#     logging.info(f'Starting red attack for {args.model}')
-    
-#     test_df = pd.read_csv(paths['test_data'])
-    
-#     iter_num = 1
-#     n = 5
-#     theta = 0.196
-#     j = 1.0
-#     dmin = 1.0
-
-####################################################################################################################
-
 
 class MRI(object):
     def __init__(self, mri, anat_features = None, pred = None, mri_type = None) -> None:
@@ -203,16 +63,29 @@ class RedAttack(object):
         return targetMRI 
 
 
+    def get_srgan_output(mri):
+        # send request to srgan server
+        srgan_url = "http://0.0.0.0:5050/"
+        data = { "base64_mri": base64.b64encode(mri.tobytes()).decode('utf-8') }
+        res = json.loads(requests.post("POST", srgan_url, json=data))
+        srgan_mri = np.fromstring(res["base64_mri"],dtype=float).reshape(config.MRI_SHAPE)
+        return srgan_mri
+
     def predict_mri(self, mriObj):
         if(mriObj.pred):
             return mriObj.pred
 
         mri = mriObj.mri
+       
+        if(self.model_name == 'srgan_cnn'):
+            mri = self.get_srgan_output(mri)
+
         mri = np.expand_dims(mri, axis=0)
         if mriObj.anat_features is not None and  tf.experimental.numpy.any(mriObj.anat_features):
             input_tensor = [(mri, mriObj.anat_features)]
         else:
             input_tensor = mri
+            
         prediction = self.model(input_tensor).numpy()[0][0]
         return prediction
    
@@ -225,6 +98,10 @@ class RedAttack(object):
             logging.info(f'starting with index: {index}')
             # source_mri_dict = { "mri_type": "source" }
             source_mri = load_normalized_mri(sample.mri_path)
+            
+            if(self.model_name == 'srgan_cnn'):
+                source_mri = self.get_srgan_output(source_mri)
+                
             source_mri = np.expand_dims(source_mri, axis=0)
             # source_mri_dict['mri'] = np.copy(source_mri[0])
             anat_features = None
