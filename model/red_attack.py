@@ -63,11 +63,13 @@ class RedAttack(object):
         return targetMRI 
 
 
-    def get_srgan_output(mri):
+    def get_srgan_output(self, mri):
         # send request to srgan server
         srgan_url = "http://0.0.0.0:5050/"
         data = { "base64_mri": base64.b64encode(mri.tobytes()).decode('utf-8') }
-        res = json.loads(requests.post("POST", srgan_url, json=data))
+        res = requests.post(srgan_url, json=data)
+        res = res.json()
+        print(f"len of response mri string: {len(res['base64_mri'])}")
         srgan_mri = np.fromstring(res["base64_mri"],dtype=float).reshape(config.MRI_SHAPE)
         return srgan_mri
 
@@ -101,7 +103,9 @@ class RedAttack(object):
             
             if(self.model_name == 'srgan_cnn'):
                 source_mri = self.get_srgan_output(source_mri)
-                
+                if source_mri.shape != config.MRI_SHAPE:
+                    source_mri = np.expand_dims(source_mri, axis=3)
+            break 
             source_mri = np.expand_dims(source_mri, axis=0)
             # source_mri_dict['mri'] = np.copy(source_mri[0])
             anat_features = None
