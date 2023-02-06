@@ -28,7 +28,9 @@ class RedAttack(object):
         self.theta = 0.196
         self.jump_size = 1.0
         self.dmin = 1.0
-        self.df = get_dataframe(paths['test_data'], args)
+        # get_dataframe is used when executing without srgan web server
+        # self.df = get_dataframe(paths['test_data'], args)
+        self.df = pd.read_csv(paths['test_data'])
         self.model = model
         self.model_name = args.model
         self.args = args
@@ -44,6 +46,11 @@ class RedAttack(object):
             target_mri = None
             for index, sample in self.df.iterrows():
                 mri = load_normalized_mri(sample.mri_path)
+                
+                # srgan test
+                if(self.model_name == 'srgan_cnn'):
+                    mri = self.get_srgan_output(mri)
+                
                 mri = np.expand_dims(mri, axis=0)
                 anat_features = []
                 if self.args.with_anat_features:
@@ -62,15 +69,17 @@ class RedAttack(object):
             logging.info(f'found target with age: {targetMRI.pred}')
         return targetMRI 
 
-
     def get_srgan_output(self, mri):
         # send request to srgan server
         srgan_url = "http://0.0.0.0:5050/"
         data = { "base64_mri": base64.b64encode(mri.tobytes()).decode('utf-8') }
         res = requests.post(srgan_url, json=data)
         res = res.json()
-        print(f"len of response mri string: {len(res['base64_mri'])}")
-        srgan_mri = np.fromstring(res["base64_mri"],dtype=float).reshape(config.MRI_SHAPE)
+        # print(f"len of response mri string: {len(res['base64_mri'])}")
+        mri_fl32 = np.frombuffer(base64.b64decode(res["base64_mri"]), dtype='float32').reshape((172, 220, 156))
+        # srgan_mri = np.fromstring(res["base64_mri"],dtype='float64').reshape((172, 220, 156))
+        srgan_mri = np.float64(mri_fl32)
+        srgan_mri = np.expand_dims(srgan_mri, axis=3)
         return srgan_mri
 
     def predict_mri(self, mriObj):
@@ -103,9 +112,6 @@ class RedAttack(object):
             
             if(self.model_name == 'srgan_cnn'):
                 source_mri = self.get_srgan_output(source_mri)
-                if source_mri.shape != config.MRI_SHAPE:
-                    source_mri = np.expand_dims(source_mri, axis=3)
-            break 
             source_mri = np.expand_dims(source_mri, axis=0)
             # source_mri_dict['mri'] = np.copy(source_mri[0])
             anat_features = None
