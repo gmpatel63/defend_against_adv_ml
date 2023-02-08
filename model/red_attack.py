@@ -125,9 +125,17 @@ class RedAttack(object):
             sourceMRI = MRI(source_mri[0], anat_features, source_pred, 'source') 
             
             start_time = time.time()
-            be_iterations, diff_src, final_pred = self.iteration(sourceMRI)
+            be_results, diff_src, final_pred = self.iteration(sourceMRI)
             
-            iters_results.append({'source age': source_pred, 'output age': final_pred, 'iterations': be_iterations, 'distance': diff_src})
+            # add a row for each iteration of boundary estimation
+            for be_result in be_results:
+                iters_results.append({
+                    'idx': index,
+                    'source age': source_pred, 
+                    'output age': final_pred,
+                    'distance': diff_src,
+                    **be_result,
+                })
             
         print(f'iters_results: {iters_results}')
         df = pd.DataFrame(iters_results)
@@ -143,7 +151,7 @@ class RedAttack(object):
 
         for i in range(self.iter_num):
             
-            beMRI, iter_num, pred_after_be = self.boundary_estimation(sourceMRI)
+            beMRI, be_results, pred_after_be = self.boundary_estimation(sourceMRI)
             
             # go_out is not useful for us because it's a regression
             # if prediction goes higher than target prediction, it will go into infinite loop
@@ -164,7 +172,7 @@ class RedAttack(object):
             final_pred = self.predict_mri(euMRI)
             logging.info(f'final prediction: {final_pred}')
             diff_src = np.sum(np.square(euMRI.mri - sourceMRI.mri))
-        return iter_num, diff_src, final_pred
+        return be_results, diff_src, final_pred
     
     
     # moves the source image to the boundary of the target image
@@ -184,6 +192,7 @@ class RedAttack(object):
         
         # doing while the value of delta is greater than the dmin
         iter_num = 0
+        be_results = []
         while (delta > dmin):
             if (self.predict_mri(Ib2) != k):
                 Ia2 = MRI(iiMRI.mri, iiMRI.anat_features)
@@ -193,11 +202,12 @@ class RedAttack(object):
             k = self.predict_mri(iiMRI)
             delta = np.amax(Ia2.mri - iiMRI.mri)
             iter_num += 1
+            be_results.append({'iteration': iter_num, 'prediction': k})
         
         pred_after_be = self.predict_mri(iiMRI)
         logging.info(f'\tprediction after boundary estimation: {pred_after_be}')
         logging.info(f'\titerations for boundary_estimation: {iter_num}')
-        return iiMRI, iter_num, pred_after_be
+        return iiMRI, be_results, pred_after_be
     
     #go_out function moves the image again inside the target class if in between optimisation the image comes out
     def go_out(self, iiMRI):
