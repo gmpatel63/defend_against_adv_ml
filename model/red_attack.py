@@ -25,6 +25,9 @@ class RedAttack(object):
     def __init__(self, args, paths, model) -> None:
         self.iter_num = 1
         self.n = 100
+        # in noromalized MRI, magnitude of each pixel will vary
+        # between approx -4 to 17. so thete needs to be small compared to
+        # original paper, where theta was 5 but range of input was 0 to 255
         self.theta = 0.196
         self.jump_size = 1.0
         self.dmin = 1.0
@@ -125,7 +128,7 @@ class RedAttack(object):
             sourceMRI = MRI(source_mri[0], anat_features, source_pred, 'source') 
             
             start_time = time.time()
-            be_results, diff_src, final_pred = self.iteration(sourceMRI)
+            be_results, diff_src, final_pred, eu_iterations, ssim = self.iteration(sourceMRI)
             
             # add a row for each iteration of boundary estimation
             for be_result in be_results:
@@ -134,6 +137,8 @@ class RedAttack(object):
                     'source age': source_pred, 
                     'output age': final_pred,
                     'distance': diff_src,
+                    'eu_iterations': eu_iterations,
+                    'ssim': ssim,
                     **be_result,
                 })
             
@@ -159,7 +164,7 @@ class RedAttack(object):
             
             grad_direction, geMRI = self.gradient_estimation(sourceMRI, goMRI)
             
-            euMRI = self.efficient_update(sourceMRI, beMRI, geMRI, grad_direction)
+            euMRI, eu_iterations = self.efficient_update(sourceMRI, beMRI, geMRI, grad_direction)
             # # print(f"prediction for targett after e_u in iteration: {pred_func(targett)}")
             # fin = targett
             # if(pred_func(targett)!=pred_func(target)):
@@ -170,9 +175,10 @@ class RedAttack(object):
             # if(array_diff(fin-sourcee)<array_diff(adversarial_image-sourcee)):
             #     targett = fin
             final_pred = self.predict_mri(euMRI)
-            logging.info(f'final prediction: {final_pred}')
+            ssim = ssim(sourceMRI.mri, euMRI.mri, multichannel=True)
+            logging.info(f'final prediction: {final_pred}, ssim: {ssim}, eu_iterations: {eu_iterations}')
             diff_src = np.sum(np.square(euMRI.mri - sourceMRI.mri))
-        return be_results, diff_src, final_pred
+        return be_results, diff_src, final_pred, eu_iterations, ssim
     
     
     # moves the source image to the boundary of the target image
@@ -209,7 +215,7 @@ class RedAttack(object):
         logging.info(f'\titerations for boundary_estimation: {iter_num}')
         return iiMRI, be_results, pred_after_be
     
-    #go_out function moves the image again inside the target class if in between optimisation the image comes out
+    #go_out function moves image just out of class boundary
     def go_out(self, iiMRI):
         logging.info('')
         logging.info('\t---go out---')
@@ -279,7 +285,7 @@ class RedAttack(object):
         target_pred = self.predict_mri(self.targetMRI)
         
         ii = 0
-        it = 0
+        iter_count = 0
         
         # we are moving the image till the inew_mri is optimzed even little
         while(d1 > d2):
@@ -288,16 +294,17 @@ class RedAttack(object):
             inewMRI.mri = beMRI.mri + l * delta
             if(self.predict_mri(inewMRI) < target_pred):
                 inewMRI, _ = self.go_out(inewMRI)
-            it = it + 1
+            iter_count = iter_count + 1
             d1 = np.sum(np.square(inewMRI.mri - sourceMRI.mri))     
-            #if after 100 iteration we didn't reach then may be we are going in wrong direction so we are breaking
-            if(it > 5):
+            #if after 1000 iteration we didn't reach then may be we are going in wrong direction so we are breaking
+            if(iter_count > 1000):
                 break
             
         if (d1 > d2):
             print(ii)
             ii = ii + 1
+            iter_count = -1
             inewMRI = copy.deepcopy(beMRI)
 
-        return inewMRI
+        return inewMRI, iter_count
     
