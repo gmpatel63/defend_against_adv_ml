@@ -1,3 +1,4 @@
+import random
 import numpy as np
 import tensorflow as tf
 import nibabel as nib
@@ -24,7 +25,7 @@ class MRI(object):
         
 class RedAttack(object):
     def __init__(self, args, paths, model) -> None:
-        self.iter_num = 1
+        self.iter_num = 1000
         self.n = 100
         # in noromalized MRI, magnitude of each pixel will vary
         # between approx -4 to 17. so thete needs to be small compared to
@@ -129,19 +130,11 @@ class RedAttack(object):
             sourceMRI = MRI(source_mri[0], anat_features, source_pred, 'source') 
             
             start_time = time.time()
-            be_results, diff_src, final_pred, eu_iterations, sm = self.iteration(sourceMRI)
+            attack_result = self.iteration(sourceMRI, src_index=index)
+            print(f'time to attack one image: {time.time() - start_time}')
             
             # add a row for each iteration of boundary estimation
-            for be_result in be_results:
-                iters_results.append({
-                    'idx': index,
-                    'source age': source_pred, 
-                    'output age': final_pred,
-                    'distance': diff_src,
-                    'eu_iterations': eu_iterations,
-                    'ssim': sm,
-                    **be_result,
-                })
+            iters_results.extend(attack_result)
             
         print(f'iters_results: {iters_results}')
         df = pd.DataFrame(iters_results)
@@ -151,19 +144,20 @@ class RedAttack(object):
         
         
     #iteration function runs the whole process again and again until the adversarial image is sufficiently optimized
-    def iteration(self, sourceMRI):
+    def iteration(self, sourceMRI, src_index):
         # targett_dict = copy.deepcopy(self.target_dict)
         # sourcee = copy.deepcopy(source_dict)
-
+        beInputMRI = None
+        iter_results = []
         for i in range(self.iter_num):
-            
-            beMRI, be_results, pred_after_be = self.boundary_estimation(sourceMRI)
+
+            beMRI, be_results, pred_after_be = self.boundary_estimation(sourceMRI, beInputMRI)
             
             # go_out is not useful for us because it's a regression
             # if prediction goes higher than target prediction, it will go into infinite loop
-            goMRI, pred_after_go = self.go_out(beMRI)
+            # goMRI, pred_after_go = self.go_out(beMRI)
             
-            grad_direction, geMRI = self.gradient_estimation(sourceMRI, goMRI)
+            grad_direction, geMRI = self.gradient_estimation(sourceMRI, beMRI)
             
             euMRI, eu_iterations = self.efficient_update(sourceMRI, beMRI, geMRI, grad_direction)
             # # print(f"prediction for targett after e_u in iteration: {pred_func(targett)}")
@@ -175,25 +169,32 @@ class RedAttack(object):
             # #and rerun the whole process
             # if(array_diff(fin-sourcee)<array_diff(adversarial_image-sourcee)):
             #     targett = fin
-            final_pred = self.predict_mri(euMRI)
+            eu_pred = self.predict_mri(euMRI)
             sm = ssim(sourceMRI.mri, euMRI.mri, multichannel=True)
-            logging.info(f'final prediction: {final_pred}, sm: {sm}, eu_iterations: {eu_iterations}')
-            diff_src = np.sum(np.square(euMRI.mri - sourceMRI.mri))
-        return be_results, diff_src, final_pred, eu_iterations, sm
+            l2_norm = np.sqrt(np.sum(np.square(euMRI.mri - sourceMRI.mri)))
+            logging.info(f'iteration: {i}, eu pred: {eu_pred}, sm: {sm}, l2_norm: {l2_norm}')
+            iter_results.append({'idx': src_index, 'iteration': i, 'output_pred': eu_pred, 'ssim': sm, 'l2_norm': l2_norm})
+            
+            beInputMRI = copy.deepcopy(euMRI)
+        
+        return iter_results
     
     
     # moves the source image to the boundary of the target image
-    def boundary_estimation(self, sourceMRI):
+    def boundary_estimation(self, sourceMRI, beInputMRI):
         logging.info('')
         logging.info('\t---boundary estimation---')
         dmin = self.dmin
         target_mri = np.copy(self.targetMRI.mri)
         source_mri = np.copy(sourceMRI.mri)
-        ii_mri = ((source_mri + target_mri)/2.0)
-        iiMRI = MRI(ii_mri, sourceMRI.anat_features)
+        if beInputMRI:
+            iiMRI = copy.deepcopy(beInputMRI)
+        else:
+            ii_mri = ((source_mri + target_mri)/2.0)
+            iiMRI = MRI(ii_mri, sourceMRI.anat_features)
         k = self.predict_mri(iiMRI)
         
-        delta = np.amax(source_mri - ii_mri)
+        delta = np.amax(source_mri - iiMRI.mri)
         Ia2 = copy.deepcopy(sourceMRI)
         Ib2 = copy.deepcopy(self.targetMRI)
         
@@ -240,6 +241,7 @@ class RedAttack(object):
         
         ii2MRI = copy.deepcopy(advMRI)
         max_val = np.max(sourceMRI.mri)
+        min_val = np.min(sourceMRI.mri)
 
         Io = np.zeros((5903040))
         #generating n random random integers between 0 and 2700 to set those pixel value as 255 so as 
@@ -247,7 +249,7 @@ class RedAttack(object):
         X = np.random.randint(0, 5903040, size=self.n)
         for i in X:
             # max_val = max value of mri
-            Io[i] = max_val
+            Io[i] = random.uniform(min_val, max_val)
         Io = Io.reshape((172, 220, 156, 1))
         #using newly generated random image to create an image near to the adversarial image
         ii2MRI.mri = advMRI.mri + (self.theta * Io)
@@ -267,7 +269,6 @@ class RedAttack(object):
         
     
     def efficient_update(self, sourceMRI, beMRI, geMRI, grad_direction):
-        logging.info('')
         logging.info('\t---efficient update---')
 
         # delta is the vector with direction to move
@@ -294,14 +295,14 @@ class RedAttack(object):
             # reducing the count of jump after every move so that we don't go much far
             l = (l/2.0)
             inewMRI.mri = beMRI.mri + l * delta
-            if(self.predict_mri(inewMRI) < target_pred):
-                inewMRI, _ = self.go_out(inewMRI)
+            # if(self.predict_mri(inewMRI) < target_pred):
+            #     inewMRI, _ = self.go_out(inewMRI)
             iter_count = iter_count + 1
             d1 = np.sum(np.square(inewMRI.mri - sourceMRI.mri))
             if(iter_count % 100 == 0):
                 current_ssim = ssim(sourceMRI.mri, inewMRI.mri, multichannel=True)
                 logging.info(f'iter_count: {iter_count}, ssim: {current_ssim}, d1: {d1}, d2: {d2}')
-            if(iter_count > 1000):
+            if(iter_count > 20):
                 break
             
         if (d1 > d2):
