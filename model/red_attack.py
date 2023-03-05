@@ -10,6 +10,7 @@ import requests
 import base64
 import json
 
+from skimage.metrics import structural_similarity as ssim
 from . import config
 from .datasets import load_normalized_mri, get_dataframe
 from .attacks import get_anatomical_features
@@ -128,7 +129,7 @@ class RedAttack(object):
             sourceMRI = MRI(source_mri[0], anat_features, source_pred, 'source') 
             
             start_time = time.time()
-            be_results, diff_src, final_pred, eu_iterations, ssim = self.iteration(sourceMRI)
+            be_results, diff_src, final_pred, eu_iterations, sm = self.iteration(sourceMRI)
             
             # add a row for each iteration of boundary estimation
             for be_result in be_results:
@@ -138,7 +139,7 @@ class RedAttack(object):
                     'output age': final_pred,
                     'distance': diff_src,
                     'eu_iterations': eu_iterations,
-                    'ssim': ssim,
+                    'ssim': sm,
                     **be_result,
                 })
             
@@ -175,10 +176,10 @@ class RedAttack(object):
             # if(array_diff(fin-sourcee)<array_diff(adversarial_image-sourcee)):
             #     targett = fin
             final_pred = self.predict_mri(euMRI)
-            ssim = ssim(sourceMRI.mri, euMRI.mri, multichannel=True)
-            logging.info(f'final prediction: {final_pred}, ssim: {ssim}, eu_iterations: {eu_iterations}')
+            sm = ssim(sourceMRI.mri, euMRI.mri, multichannel=True)
+            logging.info(f'final prediction: {final_pred}, sm: {sm}, eu_iterations: {eu_iterations}')
             diff_src = np.sum(np.square(euMRI.mri - sourceMRI.mri))
-        return be_results, diff_src, final_pred, eu_iterations, ssim
+        return be_results, diff_src, final_pred, eu_iterations, sm
     
     
     # moves the source image to the boundary of the target image
@@ -217,7 +218,6 @@ class RedAttack(object):
     
     #go_out function moves image just out of class boundary
     def go_out(self, iiMRI):
-        logging.info('')
         logging.info('\t---go out---')
         i_diff = self.targetMRI.mri - iiMRI.mri
         Inew = copy.deepcopy(iiMRI)
@@ -225,9 +225,10 @@ class RedAttack(object):
         inew_pred = self.predict_mri(Inew)
         #moving the image in the direction of target image until it's class becomes same as that of target image
         while (inew_pred < target_pred):
+            print(f'in go_out')
             Inew.mri = Inew.mri + (0.1 * i_diff)
             inew_pred = self.predict_mri(Inew)
-        print(f"\tprediction after go_out: {inew_pred}")
+        logging.info(f"\tprediction after go_out: {inew_pred}")
         return Inew, inew_pred
     
     
@@ -283,6 +284,7 @@ class RedAttack(object):
         d1 = np.sum(np.square(diff1))
         d2 = np.sum(np.square(diff2))
         target_pred = self.predict_mri(self.targetMRI)
+        logging.info(f'd1: {d1}, d2: {d2}')
         
         ii = 0
         iter_count = 0
@@ -295,8 +297,10 @@ class RedAttack(object):
             if(self.predict_mri(inewMRI) < target_pred):
                 inewMRI, _ = self.go_out(inewMRI)
             iter_count = iter_count + 1
-            d1 = np.sum(np.square(inewMRI.mri - sourceMRI.mri))     
-            #if after 1000 iteration we didn't reach then may be we are going in wrong direction so we are breaking
+            d1 = np.sum(np.square(inewMRI.mri - sourceMRI.mri))
+            if(iter_count % 100 == 0):
+                current_ssim = ssim(sourceMRI.mri, inewMRI.mri, multichannel=True)
+                logging.info(f'iter_count: {iter_count}, ssim: {current_ssim}, d1: {d1}, d2: {d2}')
             if(iter_count > 1000):
                 break
             
