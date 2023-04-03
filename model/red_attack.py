@@ -7,6 +7,7 @@ import time
 import logging
 import copy
 from pathlib import Path
+from datetime import datetime
 import requests
 import base64
 import json
@@ -27,7 +28,7 @@ class MRI(object):
 
 class RedAttack(object):
     def __init__(self, args, paths, model) -> None:
-        self.iter_num = 100
+        self.iter_num = 1000
         self.n = 10000
         # in noromalized MRI, magnitude of each pixel will vary
         # between approx -4 to 17. so thete needs to be small compared to
@@ -42,7 +43,12 @@ class RedAttack(object):
         self.model_name = args.model
         self.args = args
         self.targetMRI = self.get_target_dict()
-        self.output_dir = Path(paths['csv_dir'])
+        self.output_dir = Path(paths['csv_dir'], 'red_attack_results', datetime.now().strftime("%Y-%m-%d"))
+        self.output_dir.mkdir(exist_ok=True, parents=True)
+        time_str = datetime.now().strftime("%Y_%m_%d_%H_%M_%S")
+        self.op_file_name = f'{time_str}_{self.args.attack}_{self.args.model}'
+        self.df_path = Path(self.output_dir, f'{self.op_file_name}.csv')
+        self.op_mri_path = Path(self.output_dir, f'{self.op_file_name}.nii')
         logging.info(f'params: n={self.n}, dmin={self.dmin}, theta={self.theta}, jump_size={self.jump_size}')
 
     def get_target_dict(self):
@@ -111,7 +117,9 @@ class RedAttack(object):
         return prediction
 
     def attack(self):
+        
         iters_results = []
+        
         for index, sample in self.df.iterrows():
             logging.info('')
             logging.info('')
@@ -142,14 +150,15 @@ class RedAttack(object):
             # add a row for each iteration of boundary estimation
             iters_results.extend(attack_result)
             df = pd.DataFrame(iters_results)
-            df_name = f'{self.args.attack}_{self.args.model}.csv'
-            df_path = Path(self.output_dir, df_name)
-            df.to_csv(df_path, index=False)
-            if index == 10:
-                break
+            df.to_csv(self.df_path, index=False)
+            
+    
+    def mri_ssim(self, source_mri, adv_mri):
+        return ssim(source_mri, adv_mri, channel_axis=-1, gaussian_weights=True,
+                       sigma=1.5, use_sample_covariance=False, data_range=np.max(source_mri) - np.min(source_mri))
+
 
     # iteration function runs the whole process again and again until the adversarial image is sufficiently optimized
-
     def iteration(self, sourceMRI, src_index):
         # targett_dict = copy.deepcopy(self.target_dict)
         # sourcee = copy.deepcopy(source_dict)
@@ -186,27 +195,39 @@ class RedAttack(object):
             
             # if we have optimized the adversarial image then use the new optimized image again as adversarial image
             # and rerun the whole process
-            if(np.sum(np.square((finMRI.mri - sourceMRI.mri))) < np.sum(np.square((beMRI.mri - sourceMRI.mri)))):
+            fin_l2_norm = np.sum(np.square((finMRI.mri - sourceMRI.mri)))
+            be_l2_norm = np.sum(np.square((beMRI.mri - sourceMRI.mri)))
+            # be_ssim = self.mri_ssim(sourceMRI.mri, beMRI.mri)
+            # fin_ssim = self.mri_ssim(sourceMRI.mri, finMRI.mri)
+            fin_pred = int(self.predict_mri(finMRI))
+            target_pred = int(self.predict_mri(self.targetMRI))
+            
+            if(fin_l2_norm < be_l2_norm):
+                
                 logging.info("---- l2 norm decreased, using new MRI as finMRI ------")
                 logging.info(f"prediction of l2 decreased MRI: {self.predict_mri(finMRI)}") 
-                if(int(self.predict_mri(finMRI))<int(self.predict_mri(self.targetMRI))):
+                
+                if(fin_pred<target_pred):
                     logging.info(f"prediction of fin mri is less than target, calling boundary estimation") 
                     finMRI, *_ = self.boundary_estimation(sourceMRI)
-                    if (np.sum(np.square((finMRI.mri - sourceMRI.mri))) < np.sum(np.square((beMRI.mri - sourceMRI.mri))) and 
-                        int(self.predict_mri(finMRI))>=int(self.predict_mri(self.targetMRI))):
-                        logging.info(f"l2 norm after BE is smaller, this is unlikely, updating ") 
+                    
+                    fin_l2_norm = np.sum(np.square((finMRI.mri - sourceMRI.mri)))
+                    fin_pred = int(self.predict_mri(finMRI))
+                    # fin_ssim = self.mri_ssim(sourceMRI.mri, finMRI.mri)
+                    if (fin_l2_norm < be_l2_norm and fin_pred >=target_pred):
+                        logging.info(f"l2 norm after BE is smaller, updating minNormMRI") 
                         minNormMRI = copy.deepcopy(finMRI)
                     else:
                         logging.info(f"discarding this iterationm using minNormMRI") 
                         finMRI = copy.deepcopy(minNormMRI)
                 else:
                     minNormMRI = copy.deepcopy(finMRI)
+                    
                 beMRI = finMRI
                 
             
             iter_pred = self.predict_mri(beMRI)
-            sm = ssim(sourceMRI.mri, beMRI.mri, channel_axis=-1, gaussian_weights=True,
-                       sigma=1.5, use_sample_covariance=False, data_range=np.max(sourceMRI.mri) - np.min(sourceMRI.mri))
+            sm = self.mri_ssim(sourceMRI.mri, beMRI.mri)
             # logging.info(f'sm: {sm}')
             l2_norm = np.sqrt(np.sum(np.square(beMRI.mri - sourceMRI.mri)))
             # logging.info(
@@ -214,6 +235,11 @@ class RedAttack(object):
             logging.info("")
             logging.info("")
             iter_results.append({'idx': src_index, 'iteration': i, 'output_pred': iter_pred, 'ssim': sm, 'l2_norm': l2_norm})
+            
+        if src_index == 0:
+            op_mri = np.squeeze(beMRI.mri)
+            op_mri = nib.Nifti1Image(op_mri, np.eye(4))
+            op_mri.to_filename(self.op_mri_path)
 
         return iter_results
 
@@ -352,7 +378,7 @@ class RedAttack(object):
             #            sigma=1.5, use_sample_covariance=False, data_range=np.max(sourceMRI.mri) - np.min(sourceMRI.mri))
             #     logging.info(
             #         f'eu: iter_count: {iter_count}, ssim: {current_ssim}, d1: {d1}, d2: {d2}')
-            if(iter_count > 200):
+            if(iter_count > 20):
                 break
 
         # if (d1 > d2):
